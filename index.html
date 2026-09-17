@@ -138,7 +138,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.1.1";
+const VERSION = "v-0.1.2";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -162,7 +162,7 @@ const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
    ========================================================= */
 const S = {
   settings: null, settingsLoaded: false, dbError: null,
-  user: null, me: null, meLoaded: false, busy: false,
+  user: null, me: null, meLoaded: false, meSynced: false, busy: false,
   seasons: [], teams: [], players: [], users: [], invites: [], logs: [],
   tab: "home", teamId: null, seasonFilter: null, playerSearch: "", playerScope: "mine",
   authMode: "login", joinInvite: null, showOldInvites: false,
@@ -271,9 +271,11 @@ onAuthStateChanged(auth, (u) => {
   S.meLoaded = !u;
   syncDataSubs();
   if (u) {
-    meUnsub = onSnapshot(doc(db, "users", u.uid),
+    // includeMetadataChanges: we also get an event when our own pending write is confirmed by the server
+    meUnsub = onSnapshot(doc(db, "users", u.uid), { includeMetadataChanges: true },
       (snap) => {
         S.me = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        S.meSynced = !snap.metadata.hasPendingWrites;
         S.meLoaded = true;
         syncDataSubs();
         render();
@@ -284,7 +286,17 @@ onAuthStateChanged(auth, (u) => {
   render();
 });
 
+let retryTimer = null;
+let retryCount = 0;
+function scheduleResubscribe() {
+  if (retryTimer) return;
+  retryCount++;
+  retryTimer = setTimeout(() => { retryTimer = null; dataKey = ""; syncDataSubs(); }, 1500 * retryCount);
+}
 function syncDataSubs() {
+  // Wait until the server has confirmed our own profile/role; otherwise the rules
+  // still see the old profile and the listeners are rejected (and stop for good).
+  if (S.user && S.me && !S.meSynced) return;
   const key = `${isActive()}|${isStaff()}|${isAdmin()}|${S.user?.uid || ""}`;
   if (key === dataKey) return;
   dataKey = key;
@@ -293,8 +305,12 @@ function syncDataSubs() {
   S.seasons = []; S.teams = []; S.players = []; S.users = []; S.invites = []; S.logs = [];
   if (!isActive()) return;
   const listen = (ref, setter) => dataSubs.push(onSnapshot(ref,
-    (snap) => { setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); render(); },
-    (err) => { console.warn(err); toast(errMsg(err), "error"); }));
+    (snap) => { retryCount = 0; setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); render(); },
+    (err) => {
+      console.warn(err);
+      if (err.code === "permission-denied" && retryCount < 4) scheduleResubscribe();
+      else toast(errMsg(err), "error");
+    }));
   listen(collection(db, "seasons"), (v) => {
     S.seasons = v.sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
     if (S.seasonFilter === null) S.seasonFilter = activeSeason()?.id || "all";
