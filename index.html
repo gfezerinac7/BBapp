@@ -158,6 +158,17 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .score-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end}
 .score-grid input{font-size:22px;font-weight:700;text-align:center}
 .score-dash{font-size:22px;font-weight:700;padding-bottom:10px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:13px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--text)}
+.bad-text{color:var(--bad) !important;font-weight:700}
+.pick{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line);cursor:pointer}
+.pick:first-child{border-top:none}
+.pick input{width:22px;height:22px;accent-color:var(--accent);flex:none}
+.pick .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.pick .num{width:34px;height:34px;font-size:14px}
+.others summary{cursor:pointer;font-weight:600;color:var(--accent);padding:6px 0}
+.news.pinned{border-color:var(--accent)}
+.news-body{white-space:pre-wrap;margin-top:6px;font-size:14px}
 </style>
 </head>
 <body>
@@ -176,7 +187,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, w
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.2.1";
+const VERSION = "v-0.3";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -203,6 +214,7 @@ const S = {
   myMember: null, memberSynced: true, busy: false,
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", eventId: null,
+  announcements: [],
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
   authMode: "login", joinInvite: null, showOldInvites: false,
   pendingInvite: normCode(new URLSearchParams(location.search).get("invite") || ""),
@@ -391,7 +403,7 @@ function syncDataSubs() {
   Object.values(dataSubs).forEach((u) => u && u());
   dataSubs = {};
   S.failedLists = [];
-  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; return; }
+  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; S.announcements = []; return; }
   if (!isStaff()) { S.users = []; S.invites = []; }
   if (!isAdmin()) S.logs = [];
   // Each list retries on its own; a failing list never clears the others (no flicker).
@@ -426,6 +438,7 @@ function syncDataSubs() {
   listen("venues", () => collection(db, "venues"), (v) => (S.venues = v.sort((a, b) => (b.isHome ? 1 : 0) - (a.isHome ? 1 : 0) || (a.name || "").localeCompare(b.name || ""))));
   listen("events", () => query(collection(db, "events"), where("date", ">=", isoDaysAgo(200))), (v) => (S.events = v));
   listen("unavailability", () => query(collection(db, "absences"), where("to", ">=", isoDaysAgo(200))), (v) => (S.absences = v));
+  listen("announcements", () => query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(100)), (v) => (S.announcements = v));
   if (isStaff()) {
     listen("users", () => collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
     listen("invites", () => collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
@@ -597,15 +610,15 @@ function viewShell() {
   const tabs = [["home", "Home"], ["calendar", "Calendar"], ["teams", "Teams"]];
   if (isStaff()) tabs.push(["members", "Members"]);
   if (isAdmin()) tabs.push(["admin", "Admin"]);
-  if (!tabs.some((t) => t[0] === S.tab)) S.tab = "home";
-  const views = { home: viewHome, calendar: viewCalendar, teams: viewTeams, members: viewMembers, admin: viewAdmin };
+  if (!tabs.some((t) => t[0] === S.tab) && S.tab !== "news") S.tab = "home";
+  const views = { home: viewHome, news: viewNews, calendar: viewCalendar, teams: viewTeams, members: viewMembers, admin: viewAdmin };
   return `
   <header class="top"><div class="wrap">
     <div class="brand">${BALL(34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
     <button class="avatar" data-act="profile" aria-label="Profile">${esc(initials(S.me.name))}</button>
   </div></header>
   <main><div class="wrap">${rulesBanner()}${views[S.tab]()}${footer()}</div></main>
-  <nav class="nav"><div class="wrap">${tabs.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? "on" : ""}">${ICONS[k]}<span>${l}</span></button>`).join("")}</div></nav>`;
+  <nav class="nav"><div class="wrap">${tabs.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k || (k === "home" && S.tab === "news") ? "on" : ""}">${ICONS[k]}<span>${l}</span></button>`).join("")}</div></nav>`;
 }
 function rulesBanner() {
   const f = S.failedLists || [];
@@ -663,6 +676,8 @@ function viewHome() {
     if (!season) html += `<div class="notice"><b>Getting started:</b> go to <b>Admin</b> to set the club name and create a season. Then add teams in <b>Teams</b> and people in <b>Members</b>.</div>`;
   }
   html += `</div>`;
+  html += homeNewsSection();
+  html += homeCalendarSection();
 
   if (mine) {
     html += `<div class="section-title">My profile</div><div class="list">${memberItem(mine)}</div>`;
@@ -676,7 +691,6 @@ function viewHome() {
   if (!mine && !children.length && !isAdmin()) {
     html += `<div class="card empty" style="margin-top:16px">Your account isn't linked to a member yet. Ask your coach or admin for an invite code.</div>`;
   }
-  html += homeCalendarSection();
   html += `<div style="margin-top:16px"><button class="btn block" data-act="redeem">Redeem invite code</button></div>`;
   return html;
 }
@@ -1464,10 +1478,24 @@ function myTeamIds() {
   linkedMembers().forEach((m) => { if (roles(m).player && m.playerTeamId) ids.add(m.playerTeamId); });
   return [...ids];
 }
+const callUpPublished = (e) => e.type === "game" && e.callUpPublished === true;
+const inCallUp = (e, mid) => (e.callUpIds || []).includes(mid);
+function isMyEvent(e) {
+  if (myTeamIds().includes(e.teamId)) return true;
+  return callUpPublished(e) && linkedMembers().some((m) => inCallUp(e, m.id));
+}
+// who I can answer for: my own player profile / my children. Once a call-up is published, only called-up players answer.
 function respondersFor(e) {
-  return linkedMembers().filter((m) => roles(m).player && m.playerTeamId === e.teamId);
+  return linkedMembers().filter((m) => roles(m).player && (callUpPublished(e) ? inCallUp(e, m.id) : m.playerTeamId === e.teamId));
+}
+function notCalledUp(e) {
+  if (!callUpPublished(e)) return [];
+  return linkedMembers().filter((m) => roles(m).player && m.playerTeamId === e.teamId && !inCallUp(e, m.id));
 }
 function eventRoster(e) {
+  if (callUpPublished(e)) {
+    return (e.callUpIds || []).map(memberById).filter(Boolean).sort(callUpOrder(e));
+  }
   const ids = new Set(rosterOf(e.teamId).map((m) => m.id));
   Object.values(S.attendance).forEach((a) => { if (a.eventId === e.id) ids.add(a.memberId); });
   return sortMembers([...ids].map(memberById).filter(Boolean))
@@ -1490,7 +1518,7 @@ function visibleEvents(scope) {
   let list = S.events;
   const teamFilter = S.calTeam;
   if (scope !== "all") {
-    if (teamFilter === "mine") { const ids = myTeamIds(); list = list.filter((e) => ids.includes(e.teamId)); }
+    if (teamFilter === "mine") list = list.filter(isMyEvent);
     else if (teamFilter !== "all") list = list.filter((e) => e.teamId === teamFilter);
   }
   const upcoming = list.filter((e) => eventEnd(e).getTime() >= now).sort((a, b) => eventStart(a) - eventStart(b));
@@ -1507,9 +1535,8 @@ function syncAttendanceSubs() {
   }
   const ids = new Set();
   if (S.eventId) ids.add(S.eventId);
-  const mineIds = myTeamIds();
   const { upcoming, past } = visibleEvents();
-  const pool = S.tab === "calendar" ? (S.calView === "past" ? past : upcoming) : upcoming.filter((e) => mineIds.includes(e.teamId));
+  const pool = S.tab === "calendar" ? (S.calView === "past" ? past : upcoming) : upcoming.filter(isMyEvent);
   pool.slice(0, 60).forEach((e) => ids.add(e.id));
   const list = [...ids].sort();
   const key = list.join(",");
@@ -1570,14 +1597,16 @@ function eventCard(e, { showTeam = true } = {}) {
         <div class="title">${esc(eventTitle(e))} ${cancelled ? `<span class="badge bad">Cancelled</span>` : ""}</div>
         <div class="small muted">${esc(e.startTime || "")}${e.endTime ? `–${esc(e.endTime)}` : ""}${e.type === "game" && e.meetTime ? ` · meet ${esc(e.meetTime)}` : ""}${eventPlace(e) ? ` · ${esc(eventPlace(e))}` : ""}</div>
         ${showTeam ? `<div class="small muted">${esc(t?.name || "")}${e.type === "game" ? ` · ${e.homeAway === "away" ? "Away" : "Home"}` : ""}</div>` : ""}
+        ${e.type === "game" && !cancelled && !past ? callUpBadge(e) : ""}
         ${cancelled ? "" : past && e.type === "game"
           ? `<div class="result-line">${resultBadge(e)} ${hasResult(e) ? `<b>${esc(scoreLine(e))}</b>` : ""}</div>`
           : `<div class="counts"><span class="c ok">✓ ${c.yes}</span><span class="c warn">~ ${c.maybe + c.late}</span><span class="c bad">✕ ${c.no}</span><span class="c">? ${c.none}</span></div>`}
       </div>
       <span class="muted">›</span>
     </div>
+    ${!cancelled && !past ? notCalledUp(e).map((m) => `<div class="responder"><div class="small"><b>${esc(m.firstName)}</b> · <span class="muted">Not called up for this game</span></div></div>`).join("") : ""}
     ${!cancelled && responders.length ? responders.map((m) => `
-      <div class="responder">${responders.length > 1 || m.uid !== S.user.uid ? `<div class="small" style="font-weight:600">${esc(m.firstName)}</div>` : ""}
+      <div class="responder">${responders.length > 1 || m.uid !== S.user.uid || callUpPublished(e) ? `<div class="small" style="font-weight:600">${esc(m.firstName)}${callUpPublished(e) ? ` <span class="badge ok">Called up</span>` : ""}</div>` : ""}
         ${absenceFor(m.id, e.date) && !attOf(e.id, m.id) ? `<div class="small muted">Marked unavailable (${esc(ABSENCE_TYPES[absenceFor(m.id, e.date).type] || "")})</div>` : ""}
         ${respButtons(e, m)}
         ${isClosed(e) && !canManageTeam(e.teamId) ? `<div class="small muted">Responses are closed.</div>` : ""}
@@ -1654,6 +1683,12 @@ function viewEventDetail(e) {
     }
   }
 
+  if (e.type === "game" && !cancelled) html += callUpSection(e, manage);
+
+  if (!cancelled && !isPast(e)) {
+    const out = notCalledUp(e);
+    if (out.length) html += `<div class="notice" style="margin-top:12px">${out.map((m) => esc(m.firstName)).join(", ")} ${out.length > 1 ? "are" : "is"} not called up for this game.</div>`;
+  }
   if (!cancelled && responders.length && !isPast(e)) {
     html += `<div class="section-title">Your response</div><div class="card stack">${responders.map((m) => {
       const a = attOf(e.id, m.id);
@@ -1665,7 +1700,7 @@ function viewEventDetail(e) {
 
   // past games: players/parents only see the result, coaches still validate attendance
   if (manage || !(e.type === "game" && isPast(e))) {
-  html += `<div class="section-title spread"><span>Players (${c.total})</span>
+  html += `<div class="section-title spread"><span>${callUpPublished(e) ? "Called-up players" : "Players"} (${c.total})</span>
       ${manage && !cancelled ? `<button class="btn sm" data-act="validate-going" data-id="${e.id}">Going → Present</button>` : ""}</div>
     ${cancelled ? "" : `<div class="counts big-counts"><span class="c ok">✓ Going ${c.yes}</span><span class="c warn">~ Maybe ${c.maybe}</span><span class="c warn">⏱ Late ${c.late}</span><span class="c bad">✕ No ${c.no}</span><span class="c">? No reply ${c.none}</span></div>`}`;
   if (roster.length) {
@@ -1711,13 +1746,13 @@ function viewEventDetail(e) {
 /* Home: next events + unavailability */
 function homeCalendarSection() {
   const ids = myTeamIds();
-  const next = visibleEvents("all").upcoming.filter((e) => ids.includes(e.teamId)).slice(0, 4);
+  const next = visibleEvents("all").upcoming.filter(isMyEvent).slice(0, 4);
   const linked = linkedMembers().filter((m) => roles(m).player);
   const today = todayISO();
   const abs = S.absences.filter((a) => a.to >= today && (linked.some((m) => m.id === a.memberId) || (isStaff() && canManageTeam(a.teamId))))
     .sort((a, b) => a.from.localeCompare(b.from));
   let html = "";
-  if (ids.length) {
+  if (ids.length || next.length) {
     html += `<div class="section-title spread"><span>Next events</span><button class="btn ghost sm" data-act="tab" data-tab="calendar">See all ›</button></div>`;
     html += next.length ? `<div class="stack">${next.map((e) => eventCard(e)).join("")}</div>` : `<div class="card empty">No upcoming events.</div>`;
   }
@@ -2013,6 +2048,184 @@ Object.assign(ACTIONS, {
     await batch.commit();
     closeModal();
   })
+});
+
+
+/* =========================================================
+   CALL-UPS & ANNOUNCEMENTS (v-0.3)
+   ========================================================= */
+const CALLUP_MAX = 12;
+// team players by jersey number first, then players from other teams by name
+function callUpOrder(e) {
+  const key = (m) => (m.playerTeamId === e.teamId && hasNum(m.number) ? Number(m.number) : m.playerTeamId === e.teamId ? 900 : 1000);
+  return (a, b) => key(a) - key(b) || fullName(a).localeCompare(fullName(b));
+}
+function callUpBadge(e) {
+  const n = (e.callUpIds || []).length;
+  if (callUpPublished(e)) return `<div class="small" style="margin-top:4px"><span class="badge ok">Call-up · ${n}</span></div>`;
+  if (canManageTeam(e.teamId)) return `<div class="small" style="margin-top:4px"><span class="badge ${n ? "warn" : ""}">${n ? `Call-up draft · ${n}` : "No call-up yet"}</span></div>`;
+  return "";
+}
+function callUpSection(e, manage) {
+  const ids = e.callUpIds || [];
+  const published = callUpPublished(e);
+  const chips = ids.map(memberById).filter(Boolean).sort(callUpOrder(e))
+    .map((m) => `<span class="chip">${hasNum(m.number) && m.playerTeamId === e.teamId ? `<b>#${esc(m.number)}</b> ` : ""}${esc(fullName(m))}${m.playerTeamId !== e.teamId && teamById(m.playerTeamId) ? ` <span class="muted">(${esc(teamById(m.playerTeamId).name)})</span>` : ""}</span>`).join("");
+  let html = `<div class="section-title spread"><span>Call-up</span>${manage && !isPast(e) ? `<button class="btn primary sm" data-act="callup-edit" data-id="${e.id}">${ids.length ? "Edit call-up" : "Select players"}</button>` : ""}</div>`;
+  if (manage) {
+    html += `<div class="card stack" style="gap:8px">
+      <div class="spread"><div>${published ? `<span class="badge ok">Published</span> <span class="small muted">${esc(fmtDateTime(e.callUpPublishedAt))} · ${esc(e.callUpByName || "")}</span>` : ids.length ? `<span class="badge warn">Draft</span> <span class="small muted">Only coaches can see it</span>` : `<span class="muted small">No players selected yet.</span>`}</div>
+        <span class="small ${ids.length > CALLUP_MAX ? "bad-text" : "muted"}">${ids.length}/${CALLUP_MAX}</span></div>
+      ${chips ? `<div class="chips">${chips}</div>` : ""}
+      ${!isPast(e) && ids.length ? `<div class="row">${published ? `<button class="btn sm" data-act="callup-unpublish" data-id="${e.id}">Unpublish</button>` : `<button class="btn primary sm" data-act="callup-publish" data-id="${e.id}">Publish call-up</button>`}</div>` : ""}
+    </div>`;
+  } else if (published) {
+    html += `<div class="card"><div class="chips">${chips}</div></div>`;
+  } else {
+    html += `<div class="card empty">The call-up has not been published yet.</div>`;
+  }
+  return html;
+}
+function callUpModal(e) {
+  const t = teamById(e.teamId);
+  const selected = new Set(e.callUpIds || []);
+  const byNum = (a, b) => Number(hasNum(a.number) ? a.number : 999) - Number(hasNum(b.number) ? b.number : 999) || fullName(a).localeCompare(fullName(b));
+  const teamPlayers = rosterOf(e.teamId).sort(byNum);
+  const others = S.members.filter((m) => roles(m).player && m.playerTeamId !== e.teamId).sort((a, b) => fullName(a).localeCompare(fullName(b)));
+  const row = (m) => {
+    const a = attOf(e.id, m.id), ab = absenceFor(m.id, e.date);
+    const r = a?.response ? RESPONSES[a.response] : null;
+    return `<label class="pick"><input type="checkbox" name="cu_${m.id}" ${selected.has(m.id) ? "checked" : ""}>
+      <span class="num ${hasNum(m.number) && m.playerTeamId === e.teamId ? "" : "none"}">${hasNum(m.number) && m.playerTeamId === e.teamId ? esc(m.number) : "–"}</span>
+      <span class="main"><span class="title">${esc(fullName(m))}</span>
+        <span class="small muted">${[m.pos1, m.pos2].filter(Boolean).join(" / ")}${m.playerTeamId !== e.teamId && teamById(m.playerTeamId) ? ` · ${esc(teamById(m.playerTeamId).name)}` : ""}</span></span>
+      ${ab ? `<span class="badge warn">Unavailable</span>` : r ? `<span class="badge ${r[1]}">${r[0]}</span>` : ""}</label>`;
+  };
+  openModal({
+    title: `Call-up · ${eventTitle(e)}`,
+    body: `<div class="small muted">${esc(t?.name || "")} · ${esc(fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" }))} ${esc(e.startTime || "")}</div>
+      <div class="spread"><b id="cu-count">${selected.size} selected</b><span class="small muted">Max ${CALLUP_MAX} players</span></div>
+      <div class="list">${teamPlayers.length ? teamPlayers.map(row).join("") : `<div class="item muted">No players on ${esc(t?.name || "this team")}.</div>`}</div>
+      ${others.length ? `<details class="others"><summary>Players from other teams (${others.length})</summary><div class="list" style="margin-top:8px">${others.map(row).join("")}</div></details>` : ""}
+      <label class="check"><input type="checkbox" name="publish" ${callUpPublished(e) ? "checked" : ""}> Publish now (players and parents can see it)</label>`,
+    submitLabel: "Save call-up",
+    onSubmit: async (d) => {
+      const ids = S.members.filter((m) => d[`cu_${m.id}`]).map((m) => m.id);
+      if (d.publish && !ids.length) throw new Error("Select at least one player before publishing.");
+      if (ids.length > CALLUP_MAX && !window.confirm(`${ids.length} players selected (max ${CALLUP_MAX}). Save anyway?`)) return false;
+      await saveCallUp(e, ids, !!d.publish);
+      toast(d.publish ? "Call-up published" : "Call-up saved as draft");
+    }
+  });
+  const root = $("#modal-root");
+  root.querySelectorAll('input[name^="cu_"]').forEach((cb) => cb.addEventListener("change", () => {
+    const n = root.querySelectorAll('input[name^="cu_"]:checked').length;
+    const el = $("#cu-count"); if (el) { el.textContent = `${n} selected`; el.classList.toggle("bad-text", n > CALLUP_MAX); }
+  }));
+}
+async function saveCallUp(e, ids, publish) {
+  const batch = writeBatch(db);
+  const data = { callUpIds: ids, callUpPublished: publish, callUpBy: S.user.uid, callUpByName: S.me.name || "", callUpUpdatedAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  if (publish && !callUpPublished(e)) data.callUpPublishedAt = serverTimestamp();
+  batch.update(doc(db, "events", e.id), data);
+  log(batch, publish ? "Published call-up" : "Saved call-up draft", { label: `${eventTitle(e)} · ${e.date} · ${ids.length} players` });
+  await batch.commit();
+}
+
+/* ---------- announcements ---------- */
+function seenKey() { return `bbapp_seen_news_${S.user?.uid || ""}`; }
+function lastSeenNews() { try { return Number(localStorage.getItem(seenKey()) || 0); } catch (_) { return 0; } }
+function markNewsSeen() { try { localStorage.setItem(seenKey(), String(Date.now())); } catch (_) {} }
+function relevantNews() {
+  const mine = myTeamIds();
+  return S.announcements
+    .filter((a) => isAdmin() || !(a.teamIds || []).length || (a.teamIds || []).some((t) => mine.includes(t)) || a.createdBy === S.user.uid)
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (tsMillis(b.createdAt) || Date.now()) - (tsMillis(a.createdAt) || Date.now()));
+}
+const canEditNews = (a) => isAdmin() || (isCoach() && (a.teamIds || []).length > 0 && (a.teamIds || []).every((t) => coachOf().includes(t)));
+function newsItem(a, full = false) {
+  const isNew = tsMillis(a.createdAt) > lastSeenNews() && a.createdBy !== S.user.uid;
+  const aud = (a.teamIds || []).length ? (a.teamIds || []).map((t) => teamById(t)?.name).filter(Boolean).join(", ") : "Whole club";
+  const body = full || (a.body || "").length <= 220 ? a.body || "" : `${a.body.slice(0, 220)}…`;
+  return `<div class="card news ${a.pinned ? "pinned" : ""}">
+    <div class="spread" style="align-items:flex-start"><div class="title" style="font-weight:700">${a.pinned ? "📌 " : ""}${esc(a.title)} ${isNew ? `<span class="badge accent">New</span>` : ""}</div>
+      ${full && canEditNews(a) ? `<button class="btn sm" data-act="news-edit" data-id="${a.id}">Edit</button>` : ""}</div>
+    <div class="news-body">${esc(body)}</div>
+    <div class="small muted" style="margin-top:6px">${esc(aud)} · ${esc(a.createdByName || "")} · ${esc(fmtDateTime(a.createdAt))}</div>
+  </div>`;
+}
+function homeNewsSection() {
+  const list = relevantNews();
+  const canPost = isStaff();
+  if (!list.length && !canPost) return "";
+  let html = `<div class="section-title spread"><span>Announcements</span><button class="btn ghost sm" data-act="tab" data-tab="news">${list.length ? "See all ›" : "Open ›"}</button></div>`;
+  html += list.length ? `<div class="stack">${list.slice(0, 2).map((a) => newsItem(a)).join("")}</div>` : `<div class="card empty">No announcements yet.</div>`;
+  return html;
+}
+function viewNews() {
+  const list = relevantNews();
+  const html = `<button class="btn ghost sm" data-act="tab" data-tab="home">‹ Home</button>
+    <div class="spread" style="margin-top:6px"><h2>Announcements</h2>${isStaff() ? `<button class="btn primary sm" data-act="news-new">+ New</button>` : ""}</div>
+    <div class="stack" style="margin-top:12px">${list.length ? list.map((a) => newsItem(a, true)).join("") : `<div class="card empty">No announcements yet.</div>`}</div>`;
+  setTimeout(markNewsSeen, 1500);
+  return html;
+}
+function newsModal(a) {
+  const season = activeSeason();
+  const teams = S.teams.filter((t) => (isAdmin() || coachOf().includes(t.id)) && (!season || t.seasonId === season.id || (a?.teamIds || []).includes(t.id)));
+  const club = a ? !(a.teamIds || []).length : isAdmin();
+  openModal({
+    title: a ? "Edit announcement" : "New announcement",
+    body: `<label class="f">Title<input type="text" name="title" maxlength="80" value="${esc(a?.title || "")}" required></label>
+      <label class="f">Message<textarea name="body" rows="5" maxlength="2000">${esc(a?.body || "")}</textarea></label>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Who can see it</div>
+      <div class="card" style="padding:6px 12px">
+        ${isAdmin() ? `<label class="check" style="padding:6px 0"><input type="checkbox" name="club" id="news-club" ${club ? "checked" : ""}> Whole club</label>` : ""}
+        <div id="news-teams" ${club && isAdmin() ? "hidden" : ""}>${teams.map((t) => `<label class="check" style="padding:6px 0"><input type="checkbox" name="team_${t.id}" ${(a?.teamIds || []).includes(t.id) || (!a && !isAdmin() && teams.length === 1) ? "checked" : ""}> ${esc(t.name)}</label>`).join("")}</div>
+      </div>
+      <label class="check"><input type="checkbox" name="pinned" ${a?.pinned ? "checked" : ""}> Pin to the top</label>`,
+    danger: a ? `<button type="button" class="btn danger" data-act="news-delete" data-id="${a.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.title?.trim()) throw new Error("Title is required.");
+      const teamIds = isAdmin() && d.club ? [] : teams.filter((t) => d[`team_${t.id}`]).map((t) => t.id);
+      if (!(isAdmin() && d.club) && !teamIds.length) throw new Error("Choose at least one team.");
+      const data = { title: d.title.trim(), body: (d.body || "").trim(), teamIds, pinned: !!d.pinned, updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      const ref = a ? doc(db, "announcements", a.id) : doc(collection(db, "announcements"));
+      if (a) batch.update(ref, data);
+      else batch.set(ref, { ...data, createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+      log(batch, a ? "Edited announcement" : "Posted announcement", { label: data.title });
+      await batch.commit();
+      toast(a ? "Announcement saved" : "Announcement posted");
+    }
+  });
+  $("#news-club")?.addEventListener("change", (ev) => { const box = $("#news-teams"); if (box) box.hidden = ev.target.checked; });
+}
+
+Object.assign(ACTIONS, {
+  "callup-edit": (el) => callUpModal(eventById(el.dataset.id)),
+  "callup-publish": async (el) => {
+    const e = eventById(el.dataset.id);
+    if (!(e.callUpIds || []).length) { toast("Select players first.", "error"); return; }
+    await saveCallUp(e, e.callUpIds, true);
+    toast("Call-up published");
+  },
+  "callup-unpublish": (el) => {
+    const e = eventById(el.dataset.id);
+    confirmRun("Unpublish the call-up? Players and parents will no longer see it.", async () => { await saveCallUp(e, e.callUpIds || [], false); toast("Call-up unpublished"); });
+  },
+  "news-new": () => newsModal(null),
+  "news-edit": (el) => newsModal(byId(S.announcements, el.dataset.id)),
+  "news-delete": (el) => {
+    const a = byId(S.announcements, el.dataset.id);
+    confirmRun(`Delete “${a.title}”?`, async () => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "announcements", a.id));
+      log(batch, "Deleted announcement", { label: a.title });
+      await batch.commit();
+      closeModal(); toast("Announcement deleted");
+    });
+  }
 });
 
 document.addEventListener("click", async (e) => {
