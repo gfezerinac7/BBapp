@@ -128,6 +128,31 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .subsection{border-left:3px solid var(--accent);background:var(--surface);border-radius:0 12px 12px 0;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
 .subsection[hidden]{display:none}
 .sub-title{font-weight:700;color:var(--accent);font-size:14px}
+.event{padding:0;overflow:hidden}
+.event.cancelled .title{text-decoration:line-through;color:var(--muted)}
+.event-head{display:flex;gap:12px;align-items:center;padding:12px 14px;cursor:pointer}
+.datebox{width:52px;flex:none;text-align:center;border-radius:12px;background:var(--accent-soft);color:var(--accent);padding:6px 0;line-height:1.05}
+.datebox.game{background:var(--accent);color:#fff}
+.datebox .dow,.datebox .mon{font-size:11px;font-weight:600;text-transform:uppercase}
+.datebox .dnum{font-size:20px;font-weight:800}
+.counts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.counts .c{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.counts .c.ok{background:var(--ok-soft);color:var(--ok)}.counts .c.warn{background:var(--warn-soft);color:var(--warn)}.counts .c.bad{background:var(--bad-soft);color:var(--bad)}
+.big-counts .c{font-size:13px;padding:4px 10px}
+.responder{border-top:1px solid var(--line);padding:10px 14px;display:flex;flex-direction:column;gap:6px}
+.resp,.valid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.resp button,.valid button{border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 2px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
+.valid{margin-top:8px}.valid button{padding:6px 2px;font-size:12px}
+.resp button.on.ok,.valid button.on.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.resp button.on.warn,.valid button.on.warn{background:var(--warn);border-color:var(--warn);color:#fff}
+.resp button.on.bad,.valid button.on.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+.valid button.on{background:var(--muted);border-color:var(--muted);color:#fff}
+.resp button:disabled{opacity:.5;cursor:default}
+.badge.as-btn{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:700;padding:4px 10px}
+.weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.wd{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:600}
+.wd input{width:20px;height:20px;accent-color:var(--accent)}
+[hidden]{display:none !important}
 </style>
 </head>
 <body>
@@ -140,13 +165,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, writeBatch,
-  serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, orderBy, limit, Timestamp
+  serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, where, orderBy, limit, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.1.4";
+const VERSION = "v-0.2";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -172,6 +197,7 @@ const S = {
   user: null, me: null, meLoaded: false, meSynced: false,
   myMember: null, memberSynced: true, busy: false,
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
+  events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", eventId: null,
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
   authMode: "login", joinInvite: null, showOldInvites: false,
   pendingInvite: normCode(new URLSearchParams(location.search).get("invite") || ""),
@@ -360,7 +386,7 @@ function syncDataSubs() {
   Object.values(dataSubs).forEach((u) => u && u());
   dataSubs = {};
   S.failedLists = [];
-  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; return; }
+  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; return; }
   if (!isStaff()) { S.users = []; S.invites = []; }
   if (!isAdmin()) S.logs = [];
   // Each list retries on its own; a failing list never clears the others (no flicker).
@@ -392,6 +418,9 @@ function syncDataSubs() {
   });
   listen("teams", () => collection(db, "teams"), (v) => (S.teams = sortTeams(v)));
   listen("members", () => collection(db, "members"), (v) => (S.members = sortMembers(v)));
+  listen("venues", () => collection(db, "venues"), (v) => (S.venues = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+  listen("events", () => query(collection(db, "events"), where("date", ">=", isoDaysAgo(200))), (v) => (S.events = v));
+  listen("unavailability", () => query(collection(db, "absences"), where("to", ">=", isoDaysAgo(200))), (v) => (S.absences = v));
   if (isStaff()) {
     listen("users", () => collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
     listen("invites", () => collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
@@ -453,6 +482,7 @@ function renderNow() {
   else if (!S.me.active) html = viewDisabled();
   else html = viewShell();
   root.innerHTML = html;
+  syncAttendanceSubs();
   if (focusId) {
     const el = document.getElementById(focusId);
     if (el) { el.focus(); if (caret !== null && el.setSelectionRange) { try { el.setSelectionRange(caret, caret); } catch (_) {} } }
@@ -463,6 +493,7 @@ const BALL = (size = 34, onBlue = false) => `<svg width="${size}" height="${size
 const ICONS = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>`,
   teams: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.6c2.8-.3 4.9 1.4 5.5 4.4"/></svg>`,
+  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2M14 14h2M8 17.5h2"/></svg>`,
   members: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c.6-1.8 2.1-3 4-3s3.4 1.2 4 3"/></svg>`,
   admin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`
 };
@@ -548,11 +579,11 @@ function viewDisabled() {
 
 /* ---------- app shell ---------- */
 function viewShell() {
-  const tabs = [["home", "Home"], ["teams", "Teams"]];
+  const tabs = [["home", "Home"], ["calendar", "Calendar"], ["teams", "Teams"]];
   if (isStaff()) tabs.push(["members", "Members"]);
   if (isAdmin()) tabs.push(["admin", "Admin"]);
   if (!tabs.some((t) => t[0] === S.tab)) S.tab = "home";
-  const views = { home: viewHome, teams: viewTeams, members: viewMembers, admin: viewAdmin };
+  const views = { home: viewHome, calendar: viewCalendar, teams: viewTeams, members: viewMembers, admin: viewAdmin };
   return `
   <header class="top"><div class="wrap">
     <div class="brand">${BALL(34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
@@ -586,6 +617,7 @@ function memberItem(m, { tapAct = "member-edit", showNumberFor = null } = {}) {
     ${(m.guardianUids || []).length ? `<span class="badge ok">${plural(m.guardianUids.length, "parent")}</span>` : ""}
     ${!m.uid && !(m.guardianUids || []).length ? `<span class="badge warn">No account</span>` : ""}
     ${m.isMinor ? `<span class="badge">U18</span>` : ""}` : "";
+  const absNow = showNumberFor && typeof absenceFor === "function" ? absenceFor(m.id, todayISO()) : null;
   const lines = showNumberFor
     ? [[m.pos1, m.pos2].filter(Boolean).join(" / ") || "No position"]
     : [playerLine(m), coachLine(m)].filter(Boolean);
@@ -593,7 +625,7 @@ function memberItem(m, { tapAct = "member-edit", showNumberFor = null } = {}) {
     ${numBox}
     <div class="main"><div class="title">${esc(fullName(m))}</div>
       ${lines.map((l) => `<div class="small muted">${esc(l)}</div>`).join("")}
-      <div class="row" style="margin-top:4px">${showNumberFor ? "" : roleBadgesFor(m)} ${staffBadges}</div></div>
+      <div class="row" style="margin-top:4px">${showNumberFor ? "" : roleBadgesFor(m)} ${absNow ? `<span class="badge warn">Unavailable · ${esc(ABSENCE_TYPES[absNow.type] || "")}</span>` : ""} ${staffBadges}</div></div>
     ${editable ? `<span class="muted">›</span>` : ""}</div>`;
 }
 
@@ -629,6 +661,7 @@ function viewHome() {
   if (!mine && !children.length && !isAdmin()) {
     html += `<div class="card empty" style="margin-top:16px">Your account isn't linked to a member yet. Ask your coach or admin for an invite code.</div>`;
   }
+  html += homeCalendarSection();
   html += `<div style="margin-top:16px"><button class="btn block" data-act="redeem">Redeem invite code</button></div>`;
   return html;
 }
@@ -720,6 +753,9 @@ function viewAdmin() {
         ${s.active ? "" : `<button class="btn sm" data-act="season-activate" data-id="${s.id}">Set active</button>`}
         <button class="btn sm" data-act="season-edit" data-id="${s.id}">Edit</button></div>`).join("")}</div>`
       : `<div class="card empty">No seasons yet.</div>`}
+
+    <div class="section-title spread"><span>Venues</span><button class="btn primary sm" data-act="venue-new">+ New venue</button></div>
+    ${S.venues.length ? `<div class="list">${S.venues.map((v) => `<div class="item tap" data-act="venue-edit" data-id="${v.id}"><div class="main"><div class="title">${esc(v.name)}</div><div class="small muted">${esc(v.address || "No address")}</div></div><span class="muted">›</span></div>`).join("")}</div>` : `<div class="card empty">No venues yet. Add your halls to pick them when creating events.</div>`}
 
     <div class="section-title">Login accounts (${S.users.length})</div>
     ${S.users.length ? `<div class="list">${S.users.map(accountItem).join("")}</div>` : `<div class="card empty">No accounts.</div>`}
@@ -1220,11 +1256,11 @@ const ACTIONS = {
   reload: () => location.reload(),
   "auth-mode": (el) => { S.authMode = el.dataset.mode; render(); },
   "join-reset": () => { S.joinInvite = null; S.pendingInvite = ""; render(); },
-  logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, seasonFilter: null, authMode: "login", joinInvite: null }); await signOut(auth); },
+  logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null }); await signOut(auth); },
   profile: () => profileModal(),
   redeem: () => redeemModal(),
   "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
-  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; render(); window.scrollTo(0, 0); },
+  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; render(); window.scrollTo(0, 0); },
   "modal-close": () => closeModal(),
   "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
   "member-scope": (el) => { S.memberScope = el.dataset.scope; render(); },
@@ -1338,6 +1374,566 @@ const ACTIONS = {
     });
   }
 };
+/* =========================================================
+   CALENDAR & ATTENDANCE (v-0.2)
+   ========================================================= */
+const RESPONSES = { yes: ["Going", "ok"], maybe: ["Maybe", "warn"], late: ["Late", "warn"], no: ["Can't go", "bad"] };
+const VALIDATIONS = { present: ["Present", "ok"], late: ["Late", "warn"], absent: ["Absent", "bad"], excused: ["Excused", ""] };
+const ABSENCE_TYPES = { injury: "Injury", illness: "Illness", travel: "Travel", work: "Work / school", other: "Other" };
+const WEEKDAYS = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["0", "Sun"]];
+const CLOSE_OPTIONS = [[0, "At start time"], [2, "2 hours before"], [24, "24 hours before"], [48, "48 hours before"]];
+
+function localISO(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+const todayISO = () => localISO(new Date());
+function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return localISO(d); }
+function eventStart(e) { return new Date(`${e.date}T${e.startTime || "00:00"}`); }
+function eventEnd(e) { return new Date(`${e.date}T${e.endTime || e.startTime || "23:59"}`); }
+function fmtDay(iso, opts = { weekday: "long", day: "numeric", month: "long" }) { return new Date(`${iso}T12:00`).toLocaleDateString("en-GB", opts); }
+const eventById = (id) => byId(S.events, id);
+const venueById = (id) => byId(S.venues, id);
+const attKey = (eid, mid) => `${eid}_${mid}`;
+const attOf = (eid, mid) => S.attendance[attKey(eid, mid)];
+const isClosed = (e) => e.status === "cancelled" || Date.now() >= tsMillis(e.closesAt);
+function eventTitle(e) {
+  if (e.type === "game") return `Game vs ${e.opponent || "TBD"}`;
+  return e.title || "Practice";
+}
+function eventPlace(e) {
+  const v = venueById(e.venueId);
+  return v ? v.name : (e.location || "");
+}
+function mapLink(e) {
+  const v = venueById(e.venueId);
+  const q = v ? `${v.name} ${v.address || ""}` : e.location;
+  return q ? `https://maps.google.com/?q=${encodeURIComponent(q)}` : "";
+}
+function linkedMembers() {
+  const uid = S.user?.uid;
+  return S.members.filter((m) => m.uid === uid || (m.guardianUids || []).includes(uid));
+}
+function myTeamIds() {
+  const ids = new Set(coachOf());
+  linkedMembers().forEach((m) => { if (roles(m).player && m.playerTeamId) ids.add(m.playerTeamId); });
+  return [...ids];
+}
+function respondersFor(e) {
+  return linkedMembers().filter((m) => roles(m).player && m.playerTeamId === e.teamId);
+}
+function eventRoster(e) {
+  const ids = new Set(rosterOf(e.teamId).map((m) => m.id));
+  Object.values(S.attendance).forEach((a) => { if (a.eventId === e.id) ids.add(a.memberId); });
+  return sortMembers([...ids].map(memberById).filter(Boolean))
+    .sort((a, b) => Number(hasNum(a.number) ? a.number : 999) - Number(hasNum(b.number) ? b.number : 999));
+}
+function absenceFor(mid, date) { return S.absences.find((a) => a.memberId === mid && a.from <= date && a.to >= date); }
+function countsFor(e) {
+  const c = { yes: 0, maybe: 0, late: 0, no: 0, none: 0, total: 0 };
+  eventRoster(e).forEach((m) => {
+    c.total++;
+    const a = attOf(e.id, m.id);
+    if (a?.response) c[a.response]++;
+    else if (absenceFor(m.id, e.date)) c.no++;
+    else c.none++;
+  });
+  return c;
+}
+function visibleEvents(scope) {
+  const now = Date.now();
+  let list = S.events;
+  const teamFilter = S.calTeam;
+  if (scope !== "all") {
+    if (teamFilter === "mine") { const ids = myTeamIds(); list = list.filter((e) => ids.includes(e.teamId)); }
+    else if (teamFilter !== "all") list = list.filter((e) => e.teamId === teamFilter);
+  }
+  const upcoming = list.filter((e) => eventEnd(e).getTime() >= now).sort((a, b) => eventStart(a) - eventStart(b));
+  const past = list.filter((e) => eventEnd(e).getTime() < now).sort((a, b) => eventStart(b) - eventStart(a));
+  return { upcoming, past };
+}
+
+/* ---------- attendance listeners: only for events on screen ---------- */
+let attSubs = [], attKeyStr = "", logSub = null, logKeyStr = "";
+function syncAttendanceSubs() {
+  if (!isActive()) {
+    if (attSubs.length || logSub) { attSubs.forEach((u) => u()); attSubs = []; attKeyStr = ""; if (logSub) logSub(); logSub = null; logKeyStr = ""; }
+    return;
+  }
+  const ids = new Set();
+  if (S.eventId) ids.add(S.eventId);
+  const mineIds = myTeamIds();
+  const { upcoming, past } = visibleEvents();
+  const pool = S.tab === "calendar" ? (S.calView === "past" ? past : upcoming) : upcoming.filter((e) => mineIds.includes(e.teamId));
+  pool.slice(0, 60).forEach((e) => ids.add(e.id));
+  const list = [...ids].sort();
+  const key = list.join(",");
+  if (key !== attKeyStr) {
+    attKeyStr = key;
+    attSubs.forEach((u) => u());
+    attSubs = [];
+    const chunks = [];
+    for (let i = 0; i < list.length; i += 30) chunks.push(list.slice(i, i + 30));
+    const results = chunks.map(() => null);
+    chunks.forEach((chunk, idx) => {
+      attSubs.push(onSnapshot(query(collection(db, "attendance"), where("eventId", "in", chunk)),
+        (snap) => {
+          results[idx] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const next = {};
+          // keep old data for chunks that have not answered yet (no flicker)
+          Object.values(S.attendance).forEach((a) => { if (chunk.includes(a.eventId) === false && list.includes(a.eventId)) next[a.id] = a; });
+          results.forEach((r) => (r || []).forEach((a) => { next[a.id] = a; }));
+          S.attendance = next;
+          render();
+        },
+        (err) => { console.warn("[attendance]", err.code, err.message); if (!S.failedLists.includes("attendance")) { S.failedLists = [...S.failedLists, "attendance"]; render(); } }));
+    });
+  }
+  const e = S.eventId ? eventById(S.eventId) : null;
+  const lk = e && canManageTeam(e.teamId) ? e.id : "";
+  if (lk !== logKeyStr) {
+    logKeyStr = lk;
+    if (logSub) logSub();
+    logSub = null;
+    S.eventLog = [];
+    if (lk) {
+      logSub = onSnapshot(query(collection(db, "attendanceLog"), where("eventId", "==", lk)),
+        (snap) => { S.eventLog = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => tsMillis(b.at) - tsMillis(a.at)); render(); },
+        (err) => console.warn("[attendanceLog]", err.code, err.message));
+    }
+  }
+}
+
+/* ---------- views ---------- */
+function respButtons(e, m, compact = false) {
+  const a = attOf(e.id, m.id);
+  const closed = isClosed(e) && !canManageTeam(e.teamId);
+  return `<div class="resp ${compact ? "compact" : ""}">${Object.entries(RESPONSES).map(([k, [label, cls]]) =>
+    `<button type="button" class="${a?.response === k ? `on ${cls}` : ""}" data-act="respond" data-event="${e.id}" data-member="${m.id}" data-r="${k}" ${closed ? "disabled" : ""}>${label}</button>`).join("")}</div>`;
+}
+function eventCard(e, { showTeam = true } = {}) {
+  const t = teamById(e.teamId);
+  const c = countsFor(e);
+  const responders = respondersFor(e);
+  const cancelled = e.status === "cancelled";
+  const d = eventStart(e);
+  return `<div class="card event ${cancelled ? "cancelled" : ""}">
+    <div class="event-head tap" data-act="event-open" data-id="${e.id}">
+      <div class="datebox ${e.type === "game" ? "game" : ""}"><div class="dow">${d.toLocaleDateString("en-GB", { weekday: "short" })}</div><div class="dnum">${d.getDate()}</div><div class="mon">${d.toLocaleDateString("en-GB", { month: "short" })}</div></div>
+      <div class="main">
+        <div class="title">${esc(eventTitle(e))} ${cancelled ? `<span class="badge bad">Cancelled</span>` : ""}</div>
+        <div class="small muted">${esc(e.startTime || "")}${e.endTime ? `–${esc(e.endTime)}` : ""}${e.type === "game" && e.meetTime ? ` · meet ${esc(e.meetTime)}` : ""}${eventPlace(e) ? ` · ${esc(eventPlace(e))}` : ""}</div>
+        ${showTeam ? `<div class="small muted">${esc(t?.name || "")}${e.type === "game" ? ` · ${e.homeAway === "away" ? "Away" : "Home"}` : ""}</div>` : ""}
+        ${cancelled ? "" : `<div class="counts"><span class="c ok">✓ ${c.yes}</span><span class="c warn">~ ${c.maybe + c.late}</span><span class="c bad">✕ ${c.no}</span><span class="c">? ${c.none}</span></div>`}
+      </div>
+      <span class="muted">›</span>
+    </div>
+    ${!cancelled && responders.length ? responders.map((m) => `
+      <div class="responder">${responders.length > 1 || m.uid !== S.user.uid ? `<div class="small" style="font-weight:600">${esc(m.firstName)}</div>` : ""}
+        ${absenceFor(m.id, e.date) && !attOf(e.id, m.id) ? `<div class="small muted">Marked unavailable (${esc(ABSENCE_TYPES[absenceFor(m.id, e.date).type] || "")})</div>` : ""}
+        ${respButtons(e, m)}
+        ${isClosed(e) && !canManageTeam(e.teamId) ? `<div class="small muted">Responses are closed.</div>` : ""}
+      </div>`).join("") : ""}
+  </div>`;
+}
+function viewCalendar() {
+  if (S.eventId && eventById(S.eventId)) return viewEventDetail(eventById(S.eventId));
+  S.eventId = null;
+  if (S.calTeam === "mine" && !myTeamIds().length && isStaff()) S.calTeam = "all";
+  const manageable = S.teams.filter((t) => canManageTeam(t.id));
+  const season = activeSeason();
+  const teamOptions = S.teams.filter((t) => !season || t.seasonId === season.id);
+  const { upcoming, past } = visibleEvents();
+  const list = (S.calView === "past" ? past : upcoming).slice(0, 60);
+  let html = `<div class="spread"><h2>Calendar</h2>${manageable.length ? `<button class="btn primary sm" data-act="event-new">+ New event</button>` : ""}</div>
+    <div class="stack" style="margin:12px 0">
+      <select data-change="cal-team" aria-label="Team">
+        <option value="mine" ${S.calTeam === "mine" ? "selected" : ""}>My teams</option>
+        <option value="all" ${S.calTeam === "all" ? "selected" : ""}>All teams</option>
+        ${teamOptions.map((t) => `<option value="${t.id}" ${S.calTeam === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
+      </select>
+      <div class="seg"><button data-act="cal-view" data-view="upcoming" class="${S.calView !== "past" ? "on" : ""}">Upcoming</button><button data-act="cal-view" data-view="past" class="${S.calView === "past" ? "on" : ""}">Past</button></div>
+    </div>`;
+  if (!list.length) {
+    html += `<div class="card empty">${S.calTeam === "mine" && !myTeamIds().length ? "You're not on a team yet. Choose “All teams” to see the club calendar." : S.calView === "past" ? "No past events." : "No upcoming events."}</div>`;
+    return html;
+  }
+  let lastDay = "";
+  html += `<div class="stack">`;
+  list.forEach((e) => {
+    if (e.date !== lastDay) { lastDay = e.date; html += `<div class="section-title" style="margin:10px 2px 0">${esc(fmtDay(e.date))}${e.date === todayISO() ? " · Today" : ""}</div>`; }
+    html += eventCard(e);
+  });
+  html += `</div>`;
+  return html;
+}
+function viewEventDetail(e) {
+  const t = teamById(e.teamId);
+  const manage = canManageTeam(e.teamId);
+  const c = countsFor(e);
+  const roster = eventRoster(e);
+  const responders = respondersFor(e);
+  const cancelled = e.status === "cancelled";
+  const link = mapLink(e);
+  let html = `<button class="btn ghost sm" data-act="event-back">‹ Calendar</button>
+    <div class="spread" style="margin-top:6px;align-items:flex-start"><div>
+      <h2>${esc(eventTitle(e))} ${cancelled ? `<span class="badge bad">Cancelled</span>` : ""}</h2>
+      <div class="muted small">${esc(t?.name || "")} · ${e.type === "game" ? (e.homeAway === "away" ? "Away game" : "Home game") : "Practice"}</div></div>
+      ${manage ? `<button class="btn sm" data-act="event-edit" data-id="${e.id}">Edit</button>` : ""}</div>
+    <div class="card stack" style="margin-top:12px;gap:6px">
+      <div><b>${esc(fmtDay(e.date))}</b></div>
+      <div>${esc(e.startTime || "")}${e.endTime ? ` – ${esc(e.endTime)}` : ""}${e.type === "game" && e.meetTime ? ` · Meet at ${esc(e.meetTime)}` : ""}</div>
+      ${eventPlace(e) ? `<div>${esc(eventPlace(e))}${venueById(e.venueId)?.address ? `<span class="small muted"> · ${esc(venueById(e.venueId).address)}</span>` : ""} ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener" class="small">Map</a>` : ""}</div>` : ""}
+      ${e.notes ? `<div class="small" style="white-space:pre-wrap">${esc(e.notes)}</div>` : ""}
+      <div class="small muted">${isClosed(e) ? "Responses closed" : `Responses close ${esc(fmtDateTime(e.closesAt))}`}</div>
+    </div>`;
+
+  if (!cancelled && responders.length) {
+    html += `<div class="section-title">Your response</div><div class="card stack">${responders.map((m) => {
+      const a = attOf(e.id, m.id);
+      return `<div><div class="small" style="font-weight:600">${esc(fullName(m))}</div>${respButtons(e, m)}
+        ${a?.reason ? `<div class="small muted">Note: ${esc(a.reason)}</div>` : ""}
+        ${a?.respondedAt ? `<div class="small muted">Updated ${esc(fmtDateTime(a.respondedAt))} by ${esc(a.respondedByName || "")}</div>` : ""}</div>`;
+    }).join("")}</div>`;
+  }
+
+  html += `<div class="section-title spread"><span>Players (${c.total})</span>
+      ${manage && !cancelled ? `<button class="btn sm" data-act="validate-going" data-id="${e.id}">Going → Present</button>` : ""}</div>
+    ${cancelled ? "" : `<div class="counts big-counts"><span class="c ok">✓ Going ${c.yes}</span><span class="c warn">~ Maybe ${c.maybe}</span><span class="c warn">⏱ Late ${c.late}</span><span class="c bad">✕ No ${c.no}</span><span class="c">? No reply ${c.none}</span></div>`}`;
+  if (roster.length) {
+    html += `<div class="list">${roster.map((m) => {
+      const a = attOf(e.id, m.id);
+      const ab = absenceFor(m.id, e.date);
+      const r = a?.response ? RESPONSES[a.response] : null;
+      return `<div class="item" style="align-items:flex-start">
+        <div class="num ${hasNum(m.number) && m.playerTeamId === e.teamId ? "" : "none"}">${hasNum(m.number) && m.playerTeamId === e.teamId ? esc(m.number) : "–"}</div>
+        <div class="main">
+          <div class="spread"><div class="title">${esc(fullName(m))}</div>
+            ${manage && !cancelled ? `<button type="button" class="badge ${r ? r[1] : ""} as-btn" data-act="respond-for" data-event="${e.id}" data-member="${m.id}">${r ? r[0] : "No reply"} ▾</button>`
+              : `<span class="badge ${r ? r[1] : ""}">${r ? r[0] : "No reply"}</span>`}</div>
+          ${ab ? `<div class="small"><span class="badge warn">Unavailable · ${esc(ABSENCE_TYPES[ab.type] || "")}</span>${ab.note ? ` <span class="muted">${esc(ab.note)}</span>` : ""}</div>` : ""}
+          ${a?.reason ? `<div class="small muted">“${esc(a.reason)}”</div>` : ""}
+          ${a?.respondedAt ? `<div class="small muted">${esc(fmtDateTime(a.respondedAt))} · ${esc(a.respondedByName || "")}</div>` : ""}
+          ${manage && !cancelled ? `<div class="valid">${Object.entries(VALIDATIONS).map(([k, [label, cls]]) =>
+            `<button type="button" class="${a?.validated === k ? `on ${cls}` : ""}" data-act="validate" data-event="${e.id}" data-member="${m.id}" data-v="${k}">${label}</button>`).join("")}</div>`
+            : a?.validated ? `<div class="small">Coach: <span class="badge ${VALIDATIONS[a.validated][1]}">${VALIDATIONS[a.validated][0]}</span></div>` : ""}
+        </div></div>`;
+    }).join("")}</div>`;
+  } else html += `<div class="card empty">No players on ${esc(t?.name || "this team")} yet.</div>`;
+
+  if (manage) {
+    html += `<div class="section-title">Attendance log</div>`;
+    html += S.eventLog.length ? `<div class="list">${S.eventLog.map((l) => {
+      const m = memberById(l.memberId);
+      const val = l.action === "validation" ? (VALIDATIONS[l.value]?.[0] || "cleared") : (RESPONSES[l.value]?.[0] || l.value);
+      return `<div class="item"><div class="main"><div class="small"><b>${esc(l.byName || "?")}</b> ${l.action === "validation" ? "validated" : "answered"} <b>${esc(m ? fullName(m) : "?")}</b> → ${esc(val)}${l.reason ? ` · “${esc(l.reason)}”` : ""}</div>
+        <div class="small muted">${esc(fmtDateTime(l.at))}</div></div></div>`;
+    }).join("")}</div>` : `<div class="card empty">No changes yet.</div>`;
+    html += `<div class="stack" style="margin-top:20px">
+      <button class="btn block" data-act="event-cancel" data-id="${e.id}">${cancelled ? "Restore event" : "Cancel event"}</button>
+      <button class="btn danger block" data-act="event-delete" data-id="${e.id}">Delete event</button>
+      ${e.seriesId ? `<button class="btn danger block" data-act="event-delete-series" data-id="${e.id}">Delete this and following in series</button>` : ""}
+    </div>`;
+  }
+  return html;
+}
+
+/* Home: next events + unavailability */
+function homeCalendarSection() {
+  const ids = myTeamIds();
+  const next = visibleEvents("all").upcoming.filter((e) => ids.includes(e.teamId)).slice(0, 4);
+  const linked = linkedMembers().filter((m) => roles(m).player);
+  const today = todayISO();
+  const abs = S.absences.filter((a) => a.to >= today && (linked.some((m) => m.id === a.memberId) || (isStaff() && canManageTeam(a.teamId))))
+    .sort((a, b) => a.from.localeCompare(b.from));
+  let html = "";
+  if (ids.length) {
+    html += `<div class="section-title spread"><span>Next events</span><button class="btn ghost sm" data-act="tab" data-tab="calendar">See all ›</button></div>`;
+    html += next.length ? `<div class="stack">${next.map((e) => eventCard(e)).join("")}</div>` : `<div class="card empty">No upcoming events.</div>`;
+  }
+  if (linked.length || isStaff()) {
+    html += `<div class="section-title spread"><span>Unavailability</span><button class="btn sm" data-act="absence-new">+ Report</button></div>`;
+    html += abs.length ? `<div class="list">${abs.map((a) => {
+      const m = memberById(a.memberId);
+      const canEdit = linked.some((x) => x.id === a.memberId) || canManageTeam(a.teamId);
+      return `<div class="item"><div class="main"><div class="title">${esc(m ? fullName(m) : "?")} <span class="badge warn">${esc(ABSENCE_TYPES[a.type] || a.type)}</span></div>
+        <div class="small muted">${esc(fmtDay(a.from, { day: "numeric", month: "short" }))} → ${esc(fmtDay(a.to, { day: "numeric", month: "short" }))}${a.note ? ` · ${esc(a.note)}` : ""}</div></div>
+        ${canEdit ? `<button class="btn sm danger" data-act="absence-delete" data-id="${a.id}">Remove</button>` : ""}</div>`;
+    }).join("")}</div>` : `<div class="card empty">Nobody marked unavailable.</div>`;
+  }
+  return html;
+}
+
+/* ---------- modals ---------- */
+function eventModal(e) {
+  const manageable = S.teams.filter((t) => canManageTeam(t.id) && (!activeSeason() || t.seasonId === activeSeason().id || t.id === e?.teamId));
+  if (!manageable.length) { toast("Create a team first.", "error"); return; }
+  const type = e?.type || "practice";
+  const defTeam = e?.teamId || (S.calTeam !== "mine" && S.calTeam !== "all" && canManageTeam(S.calTeam) ? S.calTeam : manageable[0].id);
+  const closeH = e ? Math.round((tsMillis(e.startsAt) - tsMillis(e.closesAt)) / 36e5) : 2;
+  openModal({
+    title: e ? "Edit event" : "New event",
+    body: `<div class="grid2">
+        <label class="f">Type<select name="type" id="ev-type"><option value="practice" ${type === "practice" ? "selected" : ""}>Practice</option><option value="game" ${type === "game" ? "selected" : ""}>Game</option></select></label>
+        <label class="f">Team<select name="teamId">${manageable.map((t) => `<option value="${t.id}" ${defTeam === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label></div>
+      <div class="subsection" data-ev="game" ${type === "game" ? "" : "hidden"}>
+        <div class="grid2"><label class="f">Opponent<input type="text" name="opponent" value="${esc(e?.opponent || "")}"></label>
+          <label class="f">Home / away<select name="homeAway"><option value="home" ${e?.homeAway !== "away" ? "selected" : ""}>Home</option><option value="away" ${e?.homeAway === "away" ? "selected" : ""}>Away</option></select></label></div>
+        <label class="f">Meet time<input type="time" name="meetTime" value="${esc(e?.meetTime || "")}"></label>
+      </div>
+      <div class="subsection" data-ev="practice" ${type === "practice" ? "" : "hidden"}>
+        <label class="f">Title (optional)<input type="text" name="title" value="${esc(e?.title || "")}" placeholder="Practice"></label>
+      </div>
+      <label class="f">Date<input type="date" name="date" id="ev-date" value="${esc(e?.date || todayISO())}" required></label>
+      <div class="grid2"><label class="f">Start<input type="time" name="startTime" value="${esc(e?.startTime || "18:00")}" required></label>
+        <label class="f">End<input type="time" name="endTime" value="${esc(e?.endTime || "19:30")}"></label></div>
+      <label class="f">Venue<select name="venueId" id="ev-venue">
+        ${S.venues.map((v) => `<option value="${v.id}" ${e?.venueId === v.id ? "selected" : ""}>${esc(v.name)}</option>`).join("")}
+        <option value="" ${e && !e.venueId ? "selected" : ""}>Other location…</option></select></label>
+      <label class="f" data-ev="location" ${S.venues.length && (!e || e.venueId) ? "hidden" : ""}>Location<input type="text" name="location" value="${esc(e?.location || "")}" placeholder="Address or hall name"></label>
+      <label class="f">Responses close<select name="closeHours">${CLOSE_OPTIONS.map(([h, l]) => `<option value="${h}" ${closeH === h ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="f">Notes<textarea name="notes" rows="2">${esc(e?.notes || "")}</textarea></label>
+      ${e ? (e.seriesId ? `<label class="check"><input type="checkbox" name="applySeries"> Apply time, venue and notes to the following events in this series</label>` : "") : `
+      <label class="check"><input type="checkbox" name="repeat" id="ev-repeat"> Repeat every week</label>
+      <div class="subsection" data-ev="repeat" hidden>
+        <div class="weekdays">${WEEKDAYS.map(([v, l]) => `<label class="wd"><input type="checkbox" name="wd_${v}"><span>${l}</span></label>`).join("")}</div>
+        <label class="f">Until<input type="date" name="until" value="${esc(activeSeason()?.endDate || "")}"></label>
+      </div>`}`,
+    onSubmit: async (d) => {
+      const team = teamById(d.teamId);
+      if (!d.date || !d.startTime) throw new Error("Date and start time are required.");
+      if (d.endTime && d.endTime <= d.startTime) throw new Error("End time must be after start time.");
+      if (d.type === "game" && !d.opponent?.trim()) throw new Error("Enter the opponent.");
+      if (!d.venueId && !d.location?.trim()) throw new Error("Choose a venue or enter a location.");
+      const closeHours = Number(d.closeHours) || 0;
+      const base = {
+        type: d.type, teamId: d.teamId, seasonId: team?.seasonId || "", title: d.type === "practice" ? (d.title || "").trim() : "",
+        opponent: d.type === "game" ? d.opponent.trim() : "", homeAway: d.type === "game" ? d.homeAway : "", meetTime: d.type === "game" ? (d.meetTime || "") : "",
+        startTime: d.startTime, endTime: d.endTime || "", venueId: d.venueId || null, location: d.venueId ? "" : (d.location || "").trim(),
+        notes: (d.notes || "").trim(), updatedAt: serverTimestamp()
+      };
+      const timing = (date) => {
+        const start = new Date(`${date}T${d.startTime}`);
+        return { date, startsAt: Timestamp.fromDate(start), closesAt: Timestamp.fromMillis(start.getTime() - closeHours * 36e5) };
+      };
+      const batch = writeBatch(db);
+      if (e) {
+        batch.update(doc(db, "events", e.id), { ...base, ...timing(d.date) });
+        let n = 1;
+        if (d.applySeries && e.seriesId) {
+          S.events.filter((x) => x.seriesId === e.seriesId && x.id !== e.id && x.date > e.date).forEach((x) => {
+            const { type, teamId, seasonId, title, opponent, homeAway, meetTime, date, ...shared } = { ...base, date: x.date };
+            batch.update(doc(db, "events", x.id), { ...shared, ...timing(x.date) });
+            n++;
+          });
+        }
+        log(batch, "Edited event", { label: `${eventTitle({ ...e, ...base })} · ${d.date}${n > 1 ? ` (+${n - 1} in series)` : ""}` });
+        await batch.commit();
+        toast(n > 1 ? `${n} events updated` : "Event saved");
+        return;
+      }
+      let dates = [d.date];
+      let seriesId = null;
+      if (d.repeat) {
+        const days = WEEKDAYS.map(([v]) => v).filter((v) => d[`wd_${v}`]);
+        if (!days.length) days.push(String(new Date(`${d.date}T12:00`).getDay()));
+        if (!d.until || d.until < d.date) throw new Error("Choose an “Until” date after the start date.");
+        dates = [];
+        const cur = new Date(`${d.date}T12:00`), end = new Date(`${d.until}T12:00`);
+        while (cur <= end) { if (days.includes(String(cur.getDay()))) dates.push(localISO(cur)); cur.setDate(cur.getDate() + 1); }
+        if (!dates.length) throw new Error("No dates match those weekdays.");
+        if (dates.length > 200) throw new Error("That is more than 200 events. Choose an earlier “Until” date.");
+        seriesId = doc(collection(db, "events")).id;
+      }
+      dates.forEach((date) => {
+        batch.set(doc(collection(db, "events")), { ...base, ...timing(date), seriesId, status: "scheduled",
+          createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+      });
+      log(batch, dates.length > 1 ? "Created recurring events" : "Created event", { label: `${eventTitle(base)} · ${team?.name} · ${dates[0]}${dates.length > 1 ? ` (${dates.length} events)` : ""}` });
+      await batch.commit();
+      toast(dates.length > 1 ? `${dates.length} events created` : "Event created");
+    }
+  });
+  const root = $("#modal-root");
+  const show = (k, on) => { const el = root.querySelector(`[data-ev="${k}"]`); if (el) el.hidden = !on; };
+  $("#ev-type")?.addEventListener("change", (ev) => { show("game", ev.target.value === "game"); show("practice", ev.target.value === "practice"); });
+  $("#ev-venue")?.addEventListener("change", (ev) => show("location", !ev.target.value));
+  $("#ev-repeat")?.addEventListener("change", (ev) => {
+    show("repeat", ev.target.checked);
+    if (ev.target.checked) {
+      const wd = String(new Date(`${$("#ev-date").value}T12:00`).getDay());
+      const any = root.querySelectorAll('.weekdays input:checked').length;
+      if (!any) { const box = root.querySelector(`input[name="wd_${wd}"]`); if (box) box.checked = true; }
+    }
+  });
+}
+
+async function saveResponse(e, m, response, reason = "") {
+  const batch = writeBatch(db);
+  batch.set(doc(db, "attendance", attKey(e.id, m.id)), {
+    eventId: e.id, memberId: m.id, teamId: e.teamId,
+    response, reason: reason.trim(), respondedBy: S.user.uid, respondedByName: S.me.name || "", respondedAt: serverTimestamp()
+  }, { merge: true });
+  batch.set(doc(collection(db, "attendanceLog")), {
+    eventId: e.id, memberId: m.id, teamId: e.teamId, action: "response", value: response, reason: reason.trim(),
+    byUid: S.user.uid, byName: S.me.name || "", at: serverTimestamp()
+  });
+  await batch.commit();
+}
+function reasonModal(e, m, response) {
+  openModal({
+    title: `${RESPONSES[response][0]} · ${fullName(m)}`,
+    body: `<div class="small muted">${esc(eventTitle(e))} · ${esc(fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" }))} ${esc(e.startTime)}</div>
+      <label class="f">${response === "late" ? "How late? / note" : "Reason"} (optional)<input type="text" name="reason" id="resp-reason" maxlength="140" value="${esc(attOf(e.id, m.id)?.reason || "")}"></label>`,
+    submitLabel: "Save",
+    onSubmit: async (d) => { await saveResponse(e, m, response, d.reason || ""); toast("Response saved"); }
+  });
+  setTimeout(() => $("#resp-reason")?.focus(), 50);
+}
+function respondForModal(e, m) {
+  const a = attOf(e.id, m.id);
+  openModal({
+    title: `Response for ${fullName(m)}`,
+    body: `<div class="small muted">Set on behalf of the player. It is saved in the log with your name.</div>
+      <label class="f">Response<select name="response">${Object.entries(RESPONSES).map(([k, [l]]) => `<option value="${k}" ${a?.response === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="f">Note (optional)<input type="text" name="reason" maxlength="140" value="${esc(a?.reason || "")}"></label>`,
+    onSubmit: async (d) => { await saveResponse(e, m, d.response, d.reason || ""); toast("Response saved"); }
+  });
+}
+async function saveValidation(e, memberIds, value) {
+  const batch = writeBatch(db);
+  memberIds.forEach((mid) => {
+    batch.set(doc(db, "attendance", attKey(e.id, mid)), {
+      eventId: e.id, memberId: mid, teamId: e.teamId,
+      validated: value, validatedBy: S.user.uid, validatedByName: S.me.name || "", validatedAt: serverTimestamp()
+    }, { merge: true });
+    batch.set(doc(collection(db, "attendanceLog")), {
+      eventId: e.id, memberId: mid, teamId: e.teamId, action: "validation", value: value || "", reason: "",
+      byUid: S.user.uid, byName: S.me.name || "", at: serverTimestamp()
+    });
+  });
+  await batch.commit();
+}
+
+function absenceModal() {
+  const linked = linkedMembers().filter((m) => roles(m).player);
+  const staffMembers = S.members.filter((m) => roles(m).player && m.playerTeamId && canManageTeam(m.playerTeamId));
+  const options = sortMembers([...new Map([...linked, ...staffMembers].map((m) => [m.id, m])).values()]);
+  if (!options.length) { toast("No players you can report for.", "error"); return; }
+  openModal({
+    title: "Report unavailability",
+    body: `<label class="f">Player<select name="memberId">${options.map((m) => `<option value="${m.id}">${esc(fullName(m))}</option>`).join("")}</select></label>
+      <label class="f">Reason<select name="type">${Object.entries(ABSENCE_TYPES).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></label>
+      <div class="grid2"><label class="f">From<input type="date" name="from" value="${todayISO()}" required></label>
+        <label class="f">To<input type="date" name="to" value="${todayISO()}" required></label></div>
+      <label class="f">Note (optional)<input type="text" name="note" maxlength="140"></label>
+      <p class="small muted" style="margin:0">Visible to the club. Don't include medical details.</p>`,
+    onSubmit: async (d) => {
+      const m = memberById(d.memberId);
+      if (!d.from || !d.to || d.to < d.from) throw new Error("“To” must be the same day or after “From”.");
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, "absences")), { memberId: m.id, teamId: m.playerTeamId || null, type: d.type, from: d.from, to: d.to,
+        note: (d.note || "").trim(), createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+      log(batch, "Reported unavailability", { label: `${fullName(m)} · ${d.from} → ${d.to}` });
+      await batch.commit();
+      toast("Unavailability saved");
+    }
+  });
+}
+
+function venueModal(v) {
+  openModal({
+    title: v ? "Edit venue" : "New venue",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(v?.name || "")}" placeholder="Grindsted Hallen" required></label>
+      <label class="f">Address<input type="text" name="address" value="${esc(v?.address || "")}"></label>`,
+    danger: v ? `<button type="button" class="btn danger" data-act="venue-delete" data-id="${v.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      const batch = writeBatch(db);
+      const ref = v ? doc(db, "venues", v.id) : doc(collection(db, "venues"));
+      const data = { name: d.name.trim(), address: (d.address || "").trim(), updatedAt: serverTimestamp() };
+      if (v) batch.update(ref, data); else batch.set(ref, { ...data, createdAt: serverTimestamp() });
+      log(batch, v ? "Edited venue" : "Created venue", { label: data.name });
+      await batch.commit();
+      toast("Venue saved");
+    }
+  });
+}
+
+Object.assign(ACTIONS, {
+  "cal-view": (el) => { S.calView = el.dataset.view; render(); },
+  "event-new": () => eventModal(null),
+  "event-edit": (el) => eventModal(eventById(el.dataset.id)),
+  "event-open": (el) => { S.tab = "calendar"; S.eventId = el.dataset.id; render(); window.scrollTo(0, 0); },
+  "event-back": () => { S.eventId = null; render(); },
+  "event-cancel": (el) => {
+    const e = eventById(el.dataset.id);
+    const cancel = e.status !== "cancelled";
+    confirmRun(cancel ? `Cancel ${eventTitle(e)} on ${e.date}?` : "Restore this event?", async () => {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "events", e.id), { status: cancel ? "cancelled" : "scheduled", updatedAt: serverTimestamp() });
+      log(batch, cancel ? "Cancelled event" : "Restored event", { label: `${eventTitle(e)} · ${e.date}` });
+      await batch.commit();
+      toast(cancel ? "Event cancelled" : "Event restored");
+    });
+  },
+  "event-delete": (el) => {
+    const e = eventById(el.dataset.id);
+    confirmRun(`Delete ${eventTitle(e)} on ${e.date}? Responses stay in the log.`, async () => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "events", e.id));
+      log(batch, "Deleted event", { label: `${eventTitle(e)} · ${e.date}` });
+      await batch.commit();
+      S.eventId = null; toast("Event deleted");
+    });
+  },
+  "event-delete-series": (el) => {
+    const e = eventById(el.dataset.id);
+    const list = S.events.filter((x) => x.seriesId === e.seriesId && x.date >= e.date);
+    confirmRun(`Delete ${plural(list.length, "event")} (this one and the following in the series)?`, async () => {
+      const batch = writeBatch(db);
+      list.forEach((x) => batch.delete(doc(db, "events", x.id)));
+      log(batch, "Deleted events in series", { label: `${eventTitle(e)} · from ${e.date} (${list.length})` });
+      await batch.commit();
+      S.eventId = null; toast(`${plural(list.length, "event")} deleted`);
+    });
+  },
+  respond: async (el) => {
+    const e = eventById(el.dataset.event), m = memberById(el.dataset.member), r = el.dataset.r;
+    if (!e || !m) return;
+    if (isClosed(e) && !canManageTeam(e.teamId)) { toast("Responses are closed for this event.", "error"); return; }
+    if (r === "no" || r === "late") { reasonModal(e, m, r); return; }
+    await saveResponse(e, m, r);
+    toast(`${m.firstName}: ${RESPONSES[r][0]}`);
+  },
+  "respond-for": (el) => respondForModal(eventById(el.dataset.event), memberById(el.dataset.member)),
+  validate: async (el) => {
+    const e = eventById(el.dataset.event), mid = el.dataset.member, v = el.dataset.v;
+    const current = attOf(e.id, mid)?.validated;
+    await saveValidation(e, [mid], current === v ? null : v);
+  },
+  "validate-going": async (el) => {
+    const e = eventById(el.dataset.id);
+    const ids = eventRoster(e).filter((m) => attOf(e.id, m.id)?.response === "yes" && !attOf(e.id, m.id)?.validated).map((m) => m.id);
+    if (!ids.length) { toast("No unvalidated “Going” players."); return; }
+    await saveValidation(e, ids, "present");
+    toast(`${plural(ids.length, "player")} marked present`);
+  },
+  "absence-new": () => absenceModal(),
+  "absence-delete": (el) => confirmRun("Remove this unavailability?", async () => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "absences", el.dataset.id));
+    log(batch, "Removed unavailability", { label: el.dataset.id });
+    await batch.commit();
+  }),
+  "venue-new": () => venueModal(null),
+  "venue-edit": (el) => venueModal(venueById(el.dataset.id)),
+  "venue-delete": (el) => confirmRun("Delete this venue? Events keep their data but show no venue.", async () => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "venues", el.dataset.id));
+    log(batch, "Deleted venue", { label: venueById(el.dataset.id)?.name || "" });
+    await batch.commit();
+    closeModal();
+  })
+});
+
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act]");
   if (!el) return;
@@ -1351,6 +1947,7 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.dataset?.change === "season-filter") { S.seasonFilter = e.target.value; render(); }
+  if (e.target.dataset?.change === "cal-team") { S.calTeam = e.target.value; render(); }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.modal) closeModal(); });
 
