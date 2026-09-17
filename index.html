@@ -146,7 +146,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, w
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.1.3";
+const VERSION = "v-0.1.4";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -171,7 +171,7 @@ const S = {
   settings: null, settingsLoaded: false, dbError: null,
   user: null, me: null, meLoaded: false, meSynced: false,
   myMember: null, memberSynced: true, busy: false,
-  seasons: [], teams: [], members: [], users: [], invites: [], logs: [],
+  seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
   authMode: "login", joinInvite: null, showOldInvites: false,
   pendingInvite: normCode(new URLSearchParams(location.search).get("invite") || ""),
@@ -179,8 +179,8 @@ const S = {
 };
 if (S.pendingInvite) S.authMode = "join";
 
-let meUnsub = null, memberUnsub = null, memberListenId = null;
-let dataSubs = [], dataKey = "";
+let meUnsub = null, memberUnsub = null, memberListenId = null, memberRetries = 0;
+let dataSubs = {}, dataKey = "";
 
 /* =========================================================
    HELPERS
@@ -329,24 +329,26 @@ function syncMemberListener() {
   S.memberSynced = false;
   memberUnsub = onSnapshot(doc(db, "members", mid), { includeMetadataChanges: true },
     (snap) => {
+      memberRetries = 0;
       S.myMember = snap.exists() ? { id: snap.id, ...snap.data() } : null;
       S.memberSynced = !snap.metadata.hasPendingWrites;
       syncDataSubs(); render();
     },
     (err) => {
-      console.warn(err);
-      S.myMember = null; S.memberSynced = true; memberUnsub = null;
-      setTimeout(() => { if (memberListenId === mid) { memberListenId = null; syncMemberListener(); } }, 2500);
-      syncDataSubs(); render();
+      console.warn("[my member]", err.code, err.message);
+      memberUnsub = null;
+      if (memberRetries < 3) {
+        memberRetries++;
+        setTimeout(() => { if (memberListenId === mid) { memberListenId = null; syncMemberListener(); } }, 2000 * memberRetries);
+      } else {
+        S.myMember = null; S.memberSynced = true;
+        S.failedLists = [...new Set([...(S.failedLists || []), "my member profile"])];
+        syncDataSubs(); render();
+      }
     });
 }
 
-let retryTimer = null, retryCount = 0;
-function scheduleResubscribe() {
-  if (retryTimer) return;
-  retryCount++;
-  retryTimer = setTimeout(() => { retryTimer = null; dataKey = ""; syncDataSubs(); }, 1500 * retryCount);
-}
+let subsGen = 0;
 function syncDataSubs() {
   // Wait until the server has confirmed my own profile and roles, otherwise the
   // rules still see the old state and reject the listeners.
@@ -354,35 +356,54 @@ function syncDataSubs() {
   const key = `${S.user?.uid || ""}|${isActive()}|${isStaff()}|${isAdmin()}|${coachOf().join(",")}`;
   if (key === dataKey) return;
   dataKey = key;
-  dataSubs.forEach((u) => u());
-  dataSubs = [];
-  S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = [];
-  if (!isActive()) return;
-  const listen = (ref, setter) => dataSubs.push(onSnapshot(ref,
-    (snap) => { retryCount = 0; setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); render(); },
-    (err) => {
-      console.warn(err);
-      if (err.code === "permission-denied" && retryCount < 4) scheduleResubscribe();
-      else toast(errMsg(err), "error");
-    }));
-  listen(collection(db, "seasons"), (v) => {
+  const gen = ++subsGen;
+  Object.values(dataSubs).forEach((u) => u && u());
+  dataSubs = {};
+  S.failedLists = [];
+  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; return; }
+  if (!isStaff()) { S.users = []; S.invites = []; }
+  if (!isAdmin()) S.logs = [];
+  // Each list retries on its own; a failing list never clears the others (no flicker).
+  const listen = (name, makeRef, setter) => {
+    let tries = 0;
+    const start = () => onSnapshot(makeRef(),
+      (snap) => {
+        tries = 0;
+        S.failedLists = (S.failedLists || []).filter((n) => n !== name);
+        setter(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        render();
+      },
+      (err) => {
+        console.warn(`[${name}]`, err.code, err.message);
+        if (gen !== subsGen) return;
+        if (err.code === "permission-denied" && tries < 3) {
+          tries++;
+          setTimeout(() => { if (gen === subsGen) dataSubs[name] = start(); }, 1500 * tries);
+        } else if (!(S.failedLists || []).includes(name)) {
+          S.failedLists = [...(S.failedLists || []), name];
+          render();
+        }
+      });
+    dataSubs[name] = start();
+  };
+  listen("seasons", () => collection(db, "seasons"), (v) => {
     S.seasons = v.sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
     if (S.seasonFilter === null && S.seasons.length) S.seasonFilter = activeSeason()?.id || "all";
   });
-  listen(collection(db, "teams"), (v) => (S.teams = sortTeams(v)));
-  listen(collection(db, "members"), (v) => (S.members = sortMembers(v)));
+  listen("teams", () => collection(db, "teams"), (v) => (S.teams = sortTeams(v)));
+  listen("members", () => collection(db, "members"), (v) => (S.members = sortMembers(v)));
   if (isStaff()) {
-    listen(collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
-    listen(collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
+    listen("users", () => collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+    listen("invites", () => collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
   }
-  if (isAdmin()) listen(query(collection(db, "auditLog"), orderBy("at", "desc"), limit(50)), (v) => (S.logs = v));
+  if (isAdmin()) listen("activity log", () => query(collection(db, "auditLog"), orderBy("at", "desc"), limit(50)), (v) => (S.logs = v));
 }
 
 /* One-time upgrade for the admin account created with v-0.1.x (no member profile yet). */
-let migrating = false;
+let migrationTried = false;
 async function maybeMigrateLegacy() {
-  if (migrating || !S.meSynced || !isActive() || S.me.isAdmin !== true || S.me.memberId) return;
-  migrating = true;
+  if (migrationTried || !S.meSynced || !isActive() || S.me.isAdmin !== true || S.me.memberId) return;
+  migrationTried = true; // only once per page load, never in a loop
   try {
     const parts = String(S.me.name || "").trim().split(/\s+/);
     const ref = doc(collection(db, "members"));
@@ -393,8 +414,11 @@ async function maybeMigrateLegacy() {
     await batch.commit();
     await updateDoc(doc(db, "users", S.user.uid), { isAdmin: deleteField(), coachOf: deleteField() }).catch(() => {});
     toast("Your admin profile was upgraded. You can add Player/Coach in Members.");
-  } catch (err) { console.warn(err); toast(errMsg(err), "error"); }
-  finally { migrating = false; }
+  } catch (err) {
+    console.warn("[upgrade]", err);
+    if (err.code === "permission-denied") { S.failedLists = [...(S.failedLists || []), "profile upgrade"]; render(); }
+    else toast(errMsg(err), "error");
+  }
 }
 function newMemberData(o) {
   return {
@@ -534,8 +558,15 @@ function viewShell() {
     <div class="brand">${BALL(34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
     <button class="avatar" data-act="profile" aria-label="Profile">${esc(initials(S.me.name))}</button>
   </div></header>
-  <main><div class="wrap">${views[S.tab]()}${footer()}</div></main>
+  <main><div class="wrap">${rulesBanner()}${views[S.tab]()}${footer()}</div></main>
   <nav class="nav"><div class="wrap">${tabs.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? "on" : ""}">${ICONS[k]}<span>${l}</span></button>`).join("")}</div></nav>`;
+}
+function rulesBanner() {
+  const f = S.failedLists || [];
+  if (!f.length) return "";
+  return `<div class="notice bad" style="margin-bottom:14px"><b>Database permission problem.</b> Could not load: ${esc(f.join(", "))}.<br>
+    Make sure the latest <b>firestore.rules</b> file is published in Firebase → Firestore → Rules, then reload.
+    <div style="margin-top:8px"><button class="btn sm" data-act="reload">Reload</button></div></div>`;
 }
 function myBadges() {
   const r = myRoles(), b = [];
