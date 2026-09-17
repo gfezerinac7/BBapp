@@ -153,6 +153,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .wd{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:600}
 .wd input{width:20px;height:20px;accent-color:var(--accent)}
 [hidden]{display:none !important}
+.result-line{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px}
+.big-result{font-size:17px;margin-top:0}
+.score-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end}
+.score-grid input{font-size:22px;font-weight:700;text-align:center}
+.score-dash{font-size:22px;font-weight:700;padding-bottom:10px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -171,7 +176,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, w
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.2";
+const VERSION = "v-0.2.1";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -418,7 +423,7 @@ function syncDataSubs() {
   });
   listen("teams", () => collection(db, "teams"), (v) => (S.teams = sortTeams(v)));
   listen("members", () => collection(db, "members"), (v) => (S.members = sortMembers(v)));
-  listen("venues", () => collection(db, "venues"), (v) => (S.venues = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+  listen("venues", () => collection(db, "venues"), (v) => (S.venues = v.sort((a, b) => (b.isHome ? 1 : 0) - (a.isHome ? 1 : 0) || (a.name || "").localeCompare(b.name || ""))));
   listen("events", () => query(collection(db, "events"), where("date", ">=", isoDaysAgo(200))), (v) => (S.events = v));
   listen("unavailability", () => query(collection(db, "absences"), where("to", ">=", isoDaysAgo(200))), (v) => (S.absences = v));
   if (isStaff()) {
@@ -481,7 +486,17 @@ function renderNow() {
   else if (!S.me) html = viewCompleteProfile();
   else if (!S.me.active) html = viewDisabled();
   else html = viewShell();
+  // keep what the user is typing in on-page forms when live data re-renders the page
+  const keep = [];
+  root.querySelectorAll("form[data-form] [data-dirty]").forEach((el) => {
+    if (el.name) keep.push([el.form.dataset.form, el.form.elements.eventId?.value || "", el.name, el.value]);
+  });
   root.innerHTML = html;
+  keep.forEach(([f, id, n, v]) => {
+    const form = [...root.querySelectorAll(`form[data-form="${f}"]`)].find((x) => (x.elements.eventId?.value || "") === id);
+    const el = form?.elements[n];
+    if (el && "value" in el) { el.value = v; el.dataset.dirty = "1"; }
+  });
   syncAttendanceSubs();
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -755,7 +770,7 @@ function viewAdmin() {
       : `<div class="card empty">No seasons yet.</div>`}
 
     <div class="section-title spread"><span>Venues</span><button class="btn primary sm" data-act="venue-new">+ New venue</button></div>
-    ${S.venues.length ? `<div class="list">${S.venues.map((v) => `<div class="item tap" data-act="venue-edit" data-id="${v.id}"><div class="main"><div class="title">${esc(v.name)}</div><div class="small muted">${esc(v.address || "No address")}</div></div><span class="muted">›</span></div>`).join("")}</div>` : `<div class="card empty">No venues yet. Add your halls to pick them when creating events.</div>`}
+    ${S.venues.length ? `<div class="list">${S.venues.map((v) => `<div class="item tap" data-act="venue-edit" data-id="${v.id}"><div class="main"><div class="title">${esc(v.name)} ${v.isHome ? `<span class="badge accent">Home</span>` : ""}</div><div class="small muted">${esc(v.address || "No address")}</div></div><span class="muted">›</span></div>`).join("")}</div>` : `<div class="card empty">No venues yet. Add your halls to pick them when creating events.</div>`}
 
     <div class="section-title">Login accounts (${S.users.length})</div>
     ${S.users.length ? `<div class="list">${S.users.map(accountItem).join("")}</div>` : `<div class="card empty">No accounts.</div>`}
@@ -1184,6 +1199,19 @@ function maybeAutoRedeem() {
    FORM HANDLERS
    ========================================================= */
 const FORMS = {
+  async result(d) {
+    const e = eventById(d.eventId);
+    if (!e || !canManageTeam(e.teamId)) throw new Error("You can't edit this result.");
+    const both = hasNum(d.scoreFor) && hasNum(d.scoreAgainst);
+    if (!both && (hasNum(d.scoreFor) || hasNum(d.scoreAgainst))) throw new Error("Enter both scores (or leave both empty).");
+    const f = both ? Number(d.scoreFor) : null, a = both ? Number(d.scoreAgainst) : null;
+    if (both && (![f, a].every((n) => Number.isInteger(n) && n >= 0 && n <= 300))) throw new Error("Scores must be whole numbers.");
+    const batch = writeBatch(db);
+    batch.update(doc(db, "events", e.id), { scoreFor: f, scoreAgainst: a, resultBy: S.user.uid, resultByName: S.me.name || "", resultAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    log(batch, both ? "Saved result" : "Cleared result", { label: both ? `${eventTitle(e)} · ${e.date} · ${f}–${a}` : `${eventTitle(e)} · ${e.date}` });
+    await batch.commit();
+    toast(both ? "Result saved" : "Result cleared");
+  },
   async login(d) { await signInWithEmailAndPassword(auth, d.email.trim(), d.password); },
   async reset(d) {
     await sendPasswordResetEmail(auth, d.email.trim());
@@ -1240,7 +1268,10 @@ document.addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = form.querySelector("[type=submit]");
   if (btn) btn.disabled = true;
-  try { await FORMS[name](Object.fromEntries(new FormData(form)), form); }
+  try {
+    await FORMS[name](Object.fromEntries(new FormData(form)), form);
+    form.querySelectorAll("[data-dirty]").forEach((x) => delete x.dataset.dirty);
+  }
   catch (err) { console.warn(err); toast(errMsg(err), "error"); }
   finally { if (btn && document.contains(btn)) btn.disabled = false; }
 });
@@ -1390,6 +1421,23 @@ function eventStart(e) { return new Date(`${e.date}T${e.startTime || "00:00"}`);
 function eventEnd(e) { return new Date(`${e.date}T${e.endTime || e.startTime || "23:59"}`); }
 function fmtDay(iso, opts = { weekday: "long", day: "numeric", month: "long" }) { return new Date(`${iso}T12:00`).toLocaleDateString("en-GB", opts); }
 const eventById = (id) => byId(S.events, id);
+const homeVenue = () => S.venues.find((v) => v.isHome);
+const isPast = (e) => eventEnd(e).getTime() < Date.now();
+const hasStarted = (e) => eventStart(e).getTime() <= Date.now();
+const hasResult = (e) => hasNum(e.scoreFor) && hasNum(e.scoreAgainst);
+function resultBadge(e) {
+  if (!hasResult(e)) return `<span class="badge">No result yet</span>`;
+  const f = Number(e.scoreFor), a = Number(e.scoreAgainst);
+  const [l, c] = f > a ? ["W", "ok"] : f < a ? ["L", "bad"] : ["D", "warn"];
+  return `<span class="badge ${c}">${l}</span>`;
+}
+function scoreLine(e) {
+  const us = teamById(e.teamId)?.name || clubName();
+  if (!hasResult(e)) return "";
+  return e.homeAway === "away"
+    ? `${e.opponent} ${e.scoreAgainst} – ${e.scoreFor} ${us}`
+    : `${us} ${e.scoreFor} – ${e.scoreAgainst} ${e.opponent}`;
+}
 const venueById = (id) => byId(S.venues, id);
 const attKey = (eid, mid) => `${eid}_${mid}`;
 const attOf = (eid, mid) => S.attendance[attKey(eid, mid)];
@@ -1511,7 +1559,8 @@ function respButtons(e, m, compact = false) {
 function eventCard(e, { showTeam = true } = {}) {
   const t = teamById(e.teamId);
   const c = countsFor(e);
-  const responders = respondersFor(e);
+  const past = isPast(e);
+  const responders = past ? [] : respondersFor(e);
   const cancelled = e.status === "cancelled";
   const d = eventStart(e);
   return `<div class="card event ${cancelled ? "cancelled" : ""}">
@@ -1521,7 +1570,9 @@ function eventCard(e, { showTeam = true } = {}) {
         <div class="title">${esc(eventTitle(e))} ${cancelled ? `<span class="badge bad">Cancelled</span>` : ""}</div>
         <div class="small muted">${esc(e.startTime || "")}${e.endTime ? `–${esc(e.endTime)}` : ""}${e.type === "game" && e.meetTime ? ` · meet ${esc(e.meetTime)}` : ""}${eventPlace(e) ? ` · ${esc(eventPlace(e))}` : ""}</div>
         ${showTeam ? `<div class="small muted">${esc(t?.name || "")}${e.type === "game" ? ` · ${e.homeAway === "away" ? "Away" : "Home"}` : ""}</div>` : ""}
-        ${cancelled ? "" : `<div class="counts"><span class="c ok">✓ ${c.yes}</span><span class="c warn">~ ${c.maybe + c.late}</span><span class="c bad">✕ ${c.no}</span><span class="c">? ${c.none}</span></div>`}
+        ${cancelled ? "" : past && e.type === "game"
+          ? `<div class="result-line">${resultBadge(e)} ${hasResult(e) ? `<b>${esc(scoreLine(e))}</b>` : ""}</div>`
+          : `<div class="counts"><span class="c ok">✓ ${c.yes}</span><span class="c warn">~ ${c.maybe + c.late}</span><span class="c bad">✕ ${c.no}</span><span class="c">? ${c.none}</span></div>`}
       </div>
       <span class="muted">›</span>
     </div>
@@ -1585,7 +1636,25 @@ function viewEventDetail(e) {
       <div class="small muted">${isClosed(e) ? "Responses closed" : `Responses close ${esc(fmtDateTime(e.closesAt))}`}</div>
     </div>`;
 
-  if (!cancelled && responders.length) {
+  if (e.type === "game" && !cancelled && hasStarted(e)) {
+    html += `<div class="section-title">Result</div>`;
+    if (manage) {
+      const us = teamById(e.teamId)?.name || clubName();
+      html += `<form class="card stack" data-form="result">
+        <input type="hidden" name="eventId" value="${e.id}">
+        <div class="score-grid">
+          <label class="f">${esc(us)}<input type="number" name="scoreFor" inputmode="numeric" min="0" max="300" value="${esc(hasNum(e.scoreFor) ? e.scoreFor : "")}"></label>
+          <span class="score-dash">–</span>
+          <label class="f">${esc(e.opponent || "Opponent")}<input type="number" name="scoreAgainst" inputmode="numeric" min="0" max="300" value="${esc(hasNum(e.scoreAgainst) ? e.scoreAgainst : "")}"></label>
+        </div>
+        <div class="spread">${resultBadge(e)}<button class="btn primary sm" type="submit">Save result</button></div>
+      </form>`;
+    } else {
+      html += `<div class="card result-line big-result">${resultBadge(e)} ${hasResult(e) ? `<b>${esc(scoreLine(e))}</b>` : ""}</div>`;
+    }
+  }
+
+  if (!cancelled && responders.length && !isPast(e)) {
     html += `<div class="section-title">Your response</div><div class="card stack">${responders.map((m) => {
       const a = attOf(e.id, m.id);
       return `<div><div class="small" style="font-weight:600">${esc(fullName(m))}</div>${respButtons(e, m)}
@@ -1594,6 +1663,8 @@ function viewEventDetail(e) {
     }).join("")}</div>`;
   }
 
+  // past games: players/parents only see the result, coaches still validate attendance
+  if (manage || !(e.type === "game" && isPast(e))) {
   html += `<div class="section-title spread"><span>Players (${c.total})</span>
       ${manage && !cancelled ? `<button class="btn sm" data-act="validate-going" data-id="${e.id}">Going → Present</button>` : ""}</div>
     ${cancelled ? "" : `<div class="counts big-counts"><span class="c ok">✓ Going ${c.yes}</span><span class="c warn">~ Maybe ${c.maybe}</span><span class="c warn">⏱ Late ${c.late}</span><span class="c bad">✕ No ${c.no}</span><span class="c">? No reply ${c.none}</span></div>`}`;
@@ -1617,6 +1688,8 @@ function viewEventDetail(e) {
         </div></div>`;
     }).join("")}</div>`;
   } else html += `<div class="card empty">No players on ${esc(t?.name || "this team")} yet.</div>`;
+
+  }
 
   if (manage) {
     html += `<div class="section-title">Attendance log</div>`;
@@ -1668,6 +1741,7 @@ function eventModal(e) {
   const type = e?.type || "practice";
   const defTeam = e?.teamId || (S.calTeam !== "mine" && S.calTeam !== "all" && canManageTeam(S.calTeam) ? S.calTeam : manageable[0].id);
   const closeH = e ? Math.round((tsMillis(e.startsAt) - tsMillis(e.closesAt)) / 36e5) : 2;
+  const defVenue = e ? e.venueId : (type === "game" ? homeVenue()?.id : null);
   openModal({
     title: e ? "Edit event" : "New event",
     body: `<div class="grid2">
@@ -1685,7 +1759,7 @@ function eventModal(e) {
       <div class="grid2"><label class="f">Start<input type="time" name="startTime" value="${esc(e?.startTime || "18:00")}" required></label>
         <label class="f">End<input type="time" name="endTime" value="${esc(e?.endTime || "19:30")}"></label></div>
       <label class="f">Venue<select name="venueId" id="ev-venue">
-        ${S.venues.map((v) => `<option value="${v.id}" ${e?.venueId === v.id ? "selected" : ""}>${esc(v.name)}</option>`).join("")}
+        ${S.venues.map((v) => `<option value="${v.id}" ${defVenue === v.id ? "selected" : ""}>${esc(v.name)}${v.isHome ? " (Home)" : ""}</option>`).join("")}
         <option value="" ${e && !e.venueId ? "selected" : ""}>Other location…</option></select></label>
       <label class="f" data-ev="location" ${S.venues.length && (!e || e.venueId) ? "hidden" : ""}>Location<input type="text" name="location" value="${esc(e?.location || "")}" placeholder="Address or hall name"></label>
       <label class="f">Responses close<select name="closeHours">${CLOSE_OPTIONS.map(([h, l]) => `<option value="${h}" ${closeH === h ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -1753,7 +1827,11 @@ function eventModal(e) {
   });
   const root = $("#modal-root");
   const show = (k, on) => { const el = root.querySelector(`[data-ev="${k}"]`); if (el) el.hidden = !on; };
-  $("#ev-type")?.addEventListener("change", (ev) => { show("game", ev.target.value === "game"); show("practice", ev.target.value === "practice"); });
+  $("#ev-type")?.addEventListener("change", (ev) => {
+    show("game", ev.target.value === "game"); show("practice", ev.target.value === "practice");
+    // new games start at the home venue (can still be changed)
+    if (!e && ev.target.value === "game" && homeVenue()) { $("#ev-venue").value = homeVenue().id; show("location", false); }
+  });
   $("#ev-venue")?.addEventListener("change", (ev) => show("location", !ev.target.value));
   $("#ev-repeat")?.addEventListener("change", (ev) => {
     show("repeat", ev.target.checked);
@@ -1842,14 +1920,17 @@ function venueModal(v) {
   openModal({
     title: v ? "Edit venue" : "New venue",
     body: `<label class="f">Name<input type="text" name="name" value="${esc(v?.name || "")}" placeholder="Grindsted Hallen" required></label>
-      <label class="f">Address<input type="text" name="address" value="${esc(v?.address || "")}"></label>`,
+      <label class="f">Address<input type="text" name="address" value="${esc(v?.address || "")}"></label>
+      <label class="check"><input type="checkbox" name="isHome" ${v?.isHome ? "checked" : ""}> Home venue (used automatically for new games)</label>`,
     danger: v ? `<button type="button" class="btn danger" data-act="venue-delete" data-id="${v.id}">Delete</button>` : "",
     onSubmit: async (d) => {
       if (!d.name?.trim()) throw new Error("Name is required.");
       const batch = writeBatch(db);
       const ref = v ? doc(db, "venues", v.id) : doc(collection(db, "venues"));
-      const data = { name: d.name.trim(), address: (d.address || "").trim(), updatedAt: serverTimestamp() };
+      const data = { name: d.name.trim(), address: (d.address || "").trim(), isHome: !!d.isHome, updatedAt: serverTimestamp() };
       if (v) batch.update(ref, data); else batch.set(ref, { ...data, createdAt: serverTimestamp() });
+      // only one home venue
+      if (data.isHome) S.venues.filter((x) => x.isHome && x.id !== ref.id).forEach((x) => batch.update(doc(db, "venues", x.id), { isHome: false, updatedAt: serverTimestamp() }));
       log(batch, v ? "Edited venue" : "Created venue", { label: data.name });
       await batch.commit();
       toast("Venue saved");
@@ -1899,7 +1980,7 @@ Object.assign(ACTIONS, {
     const e = eventById(el.dataset.event), m = memberById(el.dataset.member), r = el.dataset.r;
     if (!e || !m) return;
     if (isClosed(e) && !canManageTeam(e.teamId)) { toast("Responses are closed for this event.", "error"); return; }
-    if (r === "no" || r === "late") { reasonModal(e, m, r); return; }
+    if (r === "late") { reasonModal(e, m, r); return; }
     await saveResponse(e, m, r);
     toast(`${m.firstName}: ${RESPONSES[r][0]}`);
   },
@@ -1943,6 +2024,7 @@ document.addEventListener("click", async (e) => {
   try { await fn(el); } catch (err) { console.warn(err); toast(errMsg(err), "error"); }
 });
 document.addEventListener("input", (e) => {
+  if (e.target.closest && e.target.closest("#app form[data-form]")) e.target.dataset.dirty = "1";
   if (e.target.dataset?.input === "member-search") { S.memberSearch = e.target.value; render(); }
 });
 document.addEventListener("change", (e) => {
