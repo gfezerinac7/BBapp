@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e8590c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>BBapp</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23e8590c'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='%23231208' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f5f3f0; --surface:#ffffff; --surface-2:#f0ece7; --text:#1f1b17; --muted:#6d655d;
+  --line:#e2dcd4; --accent:#e8590c; --accent-ink:#ffffff; --accent-soft:#fdebdf;
+  --ok:#2f7d4f; --ok-soft:#e1f2e7; --warn:#a15c00; --warn-soft:#fbefd9; --bad:#b3261e; --bad-soft:#fbe4e2;
+  --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#15120f; --surface:#1f1b17; --surface-2:#29241f; --text:#f2ede7; --muted:#a89f95;
+    --line:#352f29; --accent:#ff7a33; --accent-ink:#1a0d04; --accent-soft:#3a2415;
+    --ok:#6cc58f; --ok-soft:#1b3024; --warn:#f0b35a; --warn-soft:#382a14; --bad:#ff8a80; --bad-soft:#3a1d1b;
+    --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{margin:0;line-height:1.2}
+h2{font-size:20px}
+h3{font-size:17px}
+a{color:var(--accent)}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+
+/* header & nav */
+.top{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:env(safe-area-inset-top);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:12px;height:56px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.brand svg{flex:none}
+.brand .names{min-width:0}
+.brand .app{font-weight:700;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand .club{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.avatar{width:36px;height:36px;border-radius:50%;border:none;background:var(--accent-soft);color:var(--accent);font-weight:700;cursor:pointer}
+main{padding:16px 0 calc(96px + env(safe-area-inset-bottom))}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.nav .wrap{display:flex}
+.nav button{flex:1;border:none;background:none;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);cursor:pointer}
+.nav button svg{width:22px;height:22px}
+.nav button.on{color:var(--accent);font-weight:600}
+.foot{text-align:center;color:var(--muted);font-size:12px;padding:24px 0 8px}
+
+/* building blocks */
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.spread{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+.card.tap{cursor:pointer}
+.card.tap:active{transform:scale(.995)}
+.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:20px 2px 8px;font-weight:600}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.big{font-size:22px;font-weight:700}
+.empty{color:var(--muted);text-align:center;padding:18px 8px}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.item:first-child{border-top:none}
+.item.tap{cursor:pointer}
+.item .main{flex:1;min-width:0}
+.item .title{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.num{width:40px;height:40px;flex:none;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:800;font-variant-numeric:tabular-nums}
+.num.none{background:var(--surface-2);color:var(--muted);font-weight:500}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.badge.accent{background:var(--accent-soft);color:var(--accent)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat .label{font-size:12px;color:var(--muted)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer;min-height:40px;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--bad);border-color:var(--bad-soft)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{padding:5px 10px;min-height:32px;font-size:13px}
+.btn.block{width:100%}
+.btn:disabled{opacity:.55;cursor:default}
+.icon-btn{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted);padding:6px 8px;border-radius:8px}
+
+/* forms */
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:600}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=search],select,textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:16px;color:var(--text)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--text);font-weight:500}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.team-pick{display:grid;grid-template-columns:1fr 84px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.team-pick:first-of-type{border-top:none}
+.seg{display:flex;background:var(--surface-2);border-radius:10px;padding:3px}
+.seg button{flex:1;border:none;background:none;padding:8px;border-radius:8px;font-weight:600;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+
+/* auth */
+.auth{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px 0}
+.auth .card{padding:20px}
+.auth-brand{text-align:center;margin-bottom:18px}
+.auth-brand .app{font-size:26px;font-weight:800;margin-top:8px}
+.notice{padding:10px 12px;border-radius:10px;background:var(--accent-soft);color:var(--text);font-size:14px}
+.notice.bad{background:var(--bad-soft)}
+.notice.ok{background:var(--ok-soft)}
+
+/* modal */
+#modal-root .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20}
+#modal-root .sheet{position:fixed;z-index:21;left:0;right:0;bottom:0;max-height:92vh;overflow:auto;background:var(--bg);border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom)}
+@media (min-width:640px){#modal-root .sheet{left:50%;right:auto;bottom:auto;top:6vh;transform:translateX(-50%);width:600px;border-radius:18px;max-height:88vh}}
+.sheet-head{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);z-index:1}
+.sheet-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+.code{font:700 28px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-align:center;padding:14px;background:var(--surface);border:1px dashed var(--accent);border-radius:12px}
+.linkbox{word-break:break-all;font-size:13px;background:var(--surface-2);padding:10px;border-radius:10px}
+
+/* toast */
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:8px;width:min(92vw,480px);pointer-events:none}
+.toast{background:var(--text);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.toast.error{background:var(--bad);color:#fff}
+.spinner{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app"><div class="spinner"></div></div>
+<div id="modal-root"></div>
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
+  serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, orderBy, limit, Timestamp
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+/* =========================================================
+   CONFIG
+   ========================================================= */
+const VERSION = "v-0.1";
+const firebaseConfig = {
+  apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
+  authDomain: "bbapp-6b10e.firebaseapp.com",
+  projectId: "bbapp-6b10e",
+  storageBucket: "bbapp-6b10e.firebasestorage.app",
+  messagingSenderId: "431787724186",
+  appId: "1:431787724186:web:450f61927ae01bfc8f7e23"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+
+const POSITIONS = [["PG","Point Guard"],["SG","Shooting Guard"],["SF","Small Forward"],["PF","Power Forward"],["C","Center"]];
+const CATEGORIES = ["U8","U10","U12","U14","U16","U18","U20","Senior","Veterans"];
+const GENDERS = ["Men","Women","Mixed"];
+const INVITE_TYPES = { player: "Player", guardian: "Parent / Guardian", coach: "Coach" };
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/* =========================================================
+   STATE
+   ========================================================= */
+const S = {
+  settings: null, settingsLoaded: false, dbError: null,
+  user: null, me: null, meLoaded: false, busy: false,
+  seasons: [], teams: [], players: [], users: [], invites: [], logs: [],
+  tab: "home", teamId: null, seasonFilter: null, playerSearch: "", playerScope: "mine",
+  authMode: "login", joinInvite: null, showOldInvites: false,
+  pendingInvite: normCode(new URLSearchParams(location.search).get("invite") || ""),
+  modal: null
+};
+if (S.pendingInvite) S.authMode = "join";
+
+let meUnsub = null;
+let dataSubs = [];
+let dataKey = "";
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+function normCode(c) { return String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+function appName() { return S.settings?.appName || "BBapp"; }
+function clubName() { return S.settings?.clubName || "BB"; }
+function fullName(p) { return `${p?.firstName || ""} ${p?.lastName || ""}`.trim() || "Unnamed"; }
+function initials(name) { return String(name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
+function byId(list, id) { return list.find((x) => x.id === id); }
+function teamById(id) { return byId(S.teams, id); }
+function seasonById(id) { return byId(S.seasons, id); }
+function userById(id) { return byId(S.users, id); }
+function activeSeason() { return S.seasons.find((s) => s.active); }
+function tsMillis(t) { return t?.toMillis ? t.toMillis() : (typeof t === "number" ? t : 0); }
+function fmtDate(t) { const ms = tsMillis(t); return ms ? new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"; }
+function fmtDateTime(t) { const ms = tsMillis(t); return ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"; }
+const hasNum = (v) => v !== undefined && v !== null && v !== "";
+function posLabel(code) { return POSITIONS.find((p) => p[0] === code)?.[1] || ""; }
+function sortPlayers(list) { return [...list].sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "") || (a.firstName || "").localeCompare(b.firstName || "")); }
+function sortTeams(list) { return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true })); }
+
+const isActive = () => !!(S.me && S.me.active);
+const isAdmin = () => isActive() && S.me.isAdmin === true;
+const coachOf = () => (isActive() ? S.me.coachOf || [] : []);
+const isCoach = () => coachOf().length > 0;
+const isStaff = () => isAdmin() || isCoach();
+const canManageTeam = (tid) => isAdmin() || coachOf().includes(tid);
+const canEditPlayer = (p) => isAdmin() || (p.teamIds || []).some((t) => coachOf().includes(t));
+
+function toast(msg, type = "") {
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  const box = $("#toast");
+  while (box.children.length >= 2) box.firstElementChild.remove();
+  box.appendChild(el);
+  setTimeout(() => el.remove(), type === "error" ? 6000 : 3000);
+}
+function errMsg(err) {
+  const code = err?.code || "";
+  const map = {
+    "auth/invalid-credential": "Wrong email or password.",
+    "auth/wrong-password": "Wrong email or password.",
+    "auth/user-not-found": "Wrong email or password.",
+    "auth/invalid-email": "That email address is not valid.",
+    "auth/email-already-in-use": "This email already has an account. Log in, then use “Redeem invite code” in your profile.",
+    "auth/weak-password": "Password must be at least 6 characters.",
+    "auth/too-many-requests": "Too many attempts. Wait a moment and try again.",
+    "auth/network-request-failed": "No connection. Check your internet.",
+    "permission-denied": "You don't have permission to do that.",
+    "unavailable": "No connection to the database. Try again."
+  };
+  return map[code] || err?.message || String(err);
+}
+function log(batch, action, details = {}) {
+  if (!S.user || !isActive()) return;
+  const ref = doc(collection(db, "auditLog"));
+  const data = { action, details, byUid: S.user.uid, byName: S.me?.name || "", at: serverTimestamp() };
+  if (batch) batch.set(ref, data);
+  else setDoc(ref, data).catch(() => {});
+}
+function genCode() {
+  const arr = new Uint32Array(8);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (n) => CODE_ALPHABET[n % CODE_ALPHABET.length]).join("");
+}
+function inviteLink(code) { return `${location.origin}${location.pathname}?invite=${code}`; }
+function inviteStatus(inv) {
+  if (!inv.active) return ["Deactivated", "bad"];
+  if (tsMillis(inv.expiresAt) < Date.now()) return ["Expired", "bad"];
+  if ((inv.uses || 0) >= (inv.maxUses || 1)) return ["Used", "ok"];
+  return ["Open", "accent"];
+}
+function inviteIsOpen(inv) { return inviteStatus(inv)[0] === "Open"; }
+function describeInvite(inv) {
+  if (inv.type === "coach") return `Coach of ${inv.teamName || "a team"}`;
+  if (inv.type === "guardian") return `Parent / guardian of ${inv.playerName || "a player"}`;
+  return `Player: ${inv.playerName || "your player profile"}`;
+}
+
+/* =========================================================
+   FIREBASE LISTENERS
+   ========================================================= */
+onSnapshot(doc(db, "settings", "app"),
+  (snap) => { S.settings = snap.exists() ? snap.data() : null; S.settingsLoaded = true; S.dbError = null; render(); },
+  (err) => { S.dbError = err; S.settingsLoaded = true; render(); });
+
+onAuthStateChanged(auth, (u) => {
+  S.user = u;
+  if (meUnsub) { meUnsub(); meUnsub = null; }
+  S.me = null;
+  S.meLoaded = !u;
+  syncDataSubs();
+  if (u) {
+    meUnsub = onSnapshot(doc(db, "users", u.uid),
+      (snap) => {
+        S.me = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        S.meLoaded = true;
+        syncDataSubs();
+        render();
+        maybeAutoRedeem();
+      },
+      (err) => { S.meLoaded = true; toast(errMsg(err), "error"); render(); });
+  }
+  render();
+});
+
+function syncDataSubs() {
+  const key = `${isActive()}|${isStaff()}|${isAdmin()}|${S.user?.uid || ""}`;
+  if (key === dataKey) return;
+  dataKey = key;
+  dataSubs.forEach((u) => u());
+  dataSubs = [];
+  S.seasons = []; S.teams = []; S.players = []; S.users = []; S.invites = []; S.logs = [];
+  if (!isActive()) return;
+  const listen = (ref, setter) => dataSubs.push(onSnapshot(ref,
+    (snap) => { setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); render(); },
+    (err) => { console.warn(err); toast(errMsg(err), "error"); }));
+  listen(collection(db, "seasons"), (v) => {
+    S.seasons = v.sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
+    if (S.seasonFilter === null) S.seasonFilter = activeSeason()?.id || "all";
+  });
+  listen(collection(db, "teams"), (v) => (S.teams = sortTeams(v)));
+  listen(collection(db, "players"), (v) => (S.players = sortPlayers(v)));
+  if (isStaff()) {
+    listen(collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+    listen(collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
+  }
+  if (isAdmin()) {
+    listen(query(collection(db, "auditLog"), orderBy("at", "desc"), limit(50)), (v) => (S.logs = v));
+  }
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+let renderQueued = false;
+function render() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; renderNow(); });
+}
+function renderNow() {
+  document.title = appName();
+  const root = $("#app");
+  const active = document.activeElement;
+  const focusId = active && active.id && root.contains(active) ? active.id : null;
+  const caret = focusId && "selectionStart" in active ? active.selectionStart : null;
+
+  let html;
+  if (S.busy || !S.settingsLoaded || (S.user && !S.meLoaded)) html = `<div class="spinner"></div>`;
+  else if (S.dbError && !S.settings) html = viewDbError();
+  else if (!S.settings) html = viewSetup();
+  else if (!S.user) html = viewAuth();
+  else if (!S.me) html = viewCompleteProfile();
+  else if (!S.me.active) html = viewDisabled();
+  else html = viewShell();
+  root.innerHTML = html;
+
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) { el.focus(); if (caret !== null && el.setSelectionRange) { try { el.setSelectionRange(caret, caret); } catch (_) {} } }
+  }
+}
+
+const BALL = (size = 34) => `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="var(--accent)"/><path d="M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42" stroke="var(--text)" stroke-opacity=".75" stroke-width="3" fill="none"/></svg>`;
+const ICONS = {
+  home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>`,
+  teams: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.6c2.8-.3 4.9 1.4 5.5 4.4"/></svg>`,
+  players: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c.6-1.8 2.1-3 4-3s3.4 1.2 4 3"/></svg>`,
+  admin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`
+};
+
+function footer() { return `<div class="foot">${esc(appName())} ${VERSION}</div>`; }
+
+/* ---------- pre-app screens ---------- */
+function authBrand(sub) {
+  return `<div class="auth-brand">${BALL(56)}<div class="app">${esc(appName())}</div><div class="muted">${esc(sub || clubName())}</div></div>`;
+}
+function viewDbError() {
+  return `<div class="wrap auth">${authBrand("Connection problem")}
+    <div class="card stack"><div class="notice bad">Could not reach the database: ${esc(errMsg(S.dbError))}</div>
+    <p class="small muted">Check that Firestore Database is created in the Firebase project and the security rules are published.</p>
+    <button class="btn primary" data-act="reload">Try again</button></div>${footer()}</div>`;
+}
+function viewSetup() {
+  const signed = !!S.user;
+  return `<div class="wrap auth">${authBrand("First-time setup")}
+    <div class="card"><form data-form="setup" class="stack">
+      <p class="small muted" style="margin:0">No club is set up yet. The account you create here becomes the first <b>Admin</b>.</p>
+      <div class="grid2">
+        <label class="f">Club name<input type="text" name="clubName" value="BB" required></label>
+        <label class="f">App name<input type="text" name="appName" value="BBapp" required></label>
+      </div>
+      <label class="f">Your name<input type="text" name="name" autocomplete="name" required></label>
+      ${signed ? `<p class="small muted" style="margin:0">Signed in as ${esc(S.user.email)}</p>` : `
+      <label class="f">Email<input type="email" name="email" autocomplete="email" required></label>
+      <label class="f">Password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label>`}
+      <button class="btn primary block" type="submit">Create club and admin account</button>
+    </form></div>${footer()}</div>`;
+}
+function viewAuth() {
+  const m = S.authMode;
+  const seg = `<div class="seg"><button data-act="auth-mode" data-mode="login" class="${m === "login" ? "on" : ""}">Log in</button><button data-act="auth-mode" data-mode="join" class="${m === "join" ? "on" : ""}">Join with code</button></div>`;
+  let body = "";
+  if (m === "login") {
+    body = `<form data-form="login" class="stack">
+      <label class="f">Email<input type="email" name="email" autocomplete="email" required></label>
+      <label class="f">Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="btn primary block" type="submit">Log in</button>
+      <button class="btn ghost block" type="button" data-act="auth-mode" data-mode="reset">Forgot password?</button>
+    </form>`;
+  } else if (m === "reset") {
+    body = `<form data-form="reset" class="stack">
+      <p class="small muted" style="margin:0">We'll email you a link to choose a new password.</p>
+      <label class="f">Email<input type="email" name="email" autocomplete="email" required></label>
+      <button class="btn primary block" type="submit">Send reset link</button>
+      <button class="btn ghost block" type="button" data-act="auth-mode" data-mode="login">Back to log in</button>
+    </form>`;
+  } else if (!S.joinInvite) {
+    body = `<form data-form="join-check" class="stack">
+      <p class="small muted" style="margin:0">Your coach or club admin gives you an invite code or link.</p>
+      <label class="f">Invite code<input type="text" name="code" id="join-code" value="${esc(S.pendingInvite)}" autocapitalize="characters" autocomplete="off" required></label>
+      <button class="btn primary block" type="submit">Continue</button>
+    </form>`;
+  } else {
+    const inv = S.joinInvite.data;
+    body = `<form data-form="join" class="stack">
+      <div class="notice ok"><b>Invite accepted.</b><br>${esc(describeInvite(inv))}${inv.teamName && inv.type !== "coach" ? ` · ${esc(inv.teamName)}` : ""}</div>
+      <label class="f">Your name${inv.type === "guardian" ? " (parent / guardian)" : ""}<input type="text" name="name" autocomplete="name" required></label>
+      <label class="f">Email<input type="email" name="email" autocomplete="email" required></label>
+      <label class="f">Password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label>
+      <button class="btn primary block" type="submit">Create account</button>
+      <p class="small muted" style="margin:0">Already have an account? Log in and use <b>Redeem invite code</b> in your profile.</p>
+      <button class="btn ghost block" type="button" data-act="join-reset">Use another code</button>
+    </form>`;
+  }
+  return `<div class="wrap auth">${authBrand()}<div class="card stack">${m === "reset" ? "" : seg}${body}</div>${footer()}</div>`;
+}
+function viewCompleteProfile() {
+  return `<div class="wrap auth">${authBrand("Finish your account")}
+    <div class="card"><form data-form="complete" class="stack">
+      <p class="small muted" style="margin:0">You're signed in as <b>${esc(S.user.email)}</b>, but your account isn't linked to the club yet. Enter your invite code.</p>
+      <label class="f">Your name<input type="text" name="name" autocomplete="name" required></label>
+      <label class="f">Invite code<input type="text" name="code" value="${esc(S.pendingInvite)}" autocapitalize="characters" autocomplete="off" required></label>
+      <button class="btn primary block" type="submit">Join</button>
+      <button class="btn ghost block" type="button" data-act="logout">Log out</button>
+    </form></div>${footer()}</div>`;
+}
+function viewDisabled() {
+  return `<div class="wrap auth">${authBrand()}
+    <div class="card stack"><div class="notice bad">Your account is disabled. Contact a club admin.</div>
+    <button class="btn block" data-act="logout">Log out</button></div>${footer()}</div>`;
+}
+
+/* ---------- app shell ---------- */
+function viewShell() {
+  const tabs = [["home", "Home"], ["teams", "Teams"]];
+  if (isStaff()) tabs.push(["players", "Players"]);
+  if (isAdmin()) tabs.push(["admin", "Admin"]);
+  if (!tabs.some((t) => t[0] === S.tab)) S.tab = "home";
+  const views = { home: viewHome, teams: viewTeams, players: viewPlayers, admin: viewAdmin };
+  return `
+  <header class="top"><div class="wrap">
+    <div class="brand">${BALL()}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
+    <button class="avatar" data-act="profile" aria-label="Profile">${esc(initials(S.me.name))}</button>
+  </div></header>
+  <main><div class="wrap">${views[S.tab]()}${footer()}</div></main>
+  <nav class="nav"><div class="wrap">${tabs.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? "on" : ""}">${ICONS[k]}<span>${l}</span></button>`).join("")}</div></nav>`;
+}
+
+function roleBadges() {
+  const uid = S.user.uid;
+  const b = [];
+  if (isAdmin()) b.push(`<span class="badge accent">Admin</span>`);
+  if (isCoach()) b.push(`<span class="badge accent">Coach</span>`);
+  if (S.players.some((p) => p.selfUid === uid)) b.push(`<span class="badge ok">Player</span>`);
+  if (S.players.some((p) => (p.guardianUids || []).includes(uid))) b.push(`<span class="badge ok">Parent</span>`);
+  return b.join(" ");
+}
+function teamChips(p) {
+  return (p.teamIds || []).map((tid) => {
+    const t = teamById(tid);
+    if (!t) return "";
+    const n = p.numbers?.[tid];
+    return `<span class="badge">${esc(t.name)}${n !== undefined && n !== null && n !== "" ? ` · #${esc(n)}` : ""}</span>`;
+  }).join(" ");
+}
+
+/* ---------- Home ---------- */
+function viewHome() {
+  const uid = S.user.uid;
+  const mine = S.players.filter((p) => p.selfUid === uid || (p.guardianUids || []).includes(uid));
+  const coached = S.teams.filter((t) => coachOf().includes(t.id));
+  const season = activeSeason();
+  let html = `<div class="stack">
+    <div><h2>Hi, ${esc((S.me.name || "").split(" ")[0] || "there")}</h2><div class="row" style="margin-top:6px">${roleBadges()}</div></div>`;
+
+  if (isAdmin()) {
+    html += `<div class="stats">
+      <div class="card stat"><div class="label">Active season</div><div class="big">${esc(season?.name || "None")}</div></div>
+      <div class="card stat"><div class="label">Teams</div><div class="big">${S.teams.filter((t) => !season || t.seasonId === season.id).length}</div></div>
+      <div class="card stat"><div class="label">Players</div><div class="big">${S.players.length}</div></div>
+      <div class="card stat"><div class="label">Users</div><div class="big">${S.users.length}</div></div>
+    </div>`;
+    if (!season) html += `<div class="notice">Start by creating a season in <b>Admin</b>, then add teams.</div>`;
+  }
+
+  html += `</div><div class="section-title">My players</div>`;
+  if (mine.length) {
+    html += `<div class="list">${mine.map((p) => {
+      const rel = p.selfUid === uid ? "You" : "Your child / ward";
+      const pos = [p.pos1, p.pos2].filter(Boolean).join(" / ");
+      return `<div class="item ${isStaff() && canEditPlayer(p) ? "tap" : ""}" ${isStaff() && canEditPlayer(p) ? `data-act="player-edit" data-id="${p.id}"` : ""}>
+        <div class="num none">${esc(initials(fullName(p)))}</div>
+        <div class="main"><div class="title">${esc(fullName(p))}</div>
+          <div class="small muted">${rel}${pos ? ` · ${esc(pos)}` : ""}</div>
+          <div class="row" style="margin-top:4px">${teamChips(p) || `<span class="small muted">No team yet</span>`}</div></div>
+      </div>`;
+    }).join("")}</div>`;
+  } else {
+    html += `<div class="card empty">You're not linked to any player yet.</div>`;
+  }
+
+  if (coached.length) {
+    html += `<div class="section-title">Teams I coach</div><div class="list">${coached.map((t) => teamItem(t)).join("")}</div>`;
+  }
+  html += `<div style="margin-top:16px"><button class="btn block" data-act="redeem">Redeem invite code</button></div>`;
+  return html;
+}
+
+/* ---------- Teams ---------- */
+function teamItem(t) {
+  const count = S.players.filter((p) => (p.teamIds || []).includes(t.id)).length;
+  const season = seasonById(t.seasonId);
+  return `<div class="item tap" data-act="team-open" data-id="${t.id}">
+    <div class="num">${esc((t.category || t.name || "?").slice(0, 3))}</div>
+    <div class="main"><div class="title">${esc(t.name)}</div>
+      <div class="small muted">${[t.category, t.gender, season?.name].filter(Boolean).map(esc).join(" · ")}</div>
+      <div class="small muted">${count} player${count === 1 ? "" : "s"}${coachNamesOf(t).length ? ` · Coach: ${esc(coachNamesOf(t).join(", "))}` : ""}</div></div>
+    <span class="muted">›</span></div>`;
+}
+function coachNamesOf(t) {
+  return (t.coachUids || []).map((u) => userById(u)?.name || t.coachNames?.[u] || "Coach");
+}
+function viewTeams() {
+  if (S.teamId && teamById(S.teamId)) return viewTeamDetail(teamById(S.teamId));
+  S.teamId = null;
+  const filter = S.seasonFilter || "all";
+  const teams = S.teams.filter((t) => filter === "all" || t.seasonId === filter);
+  return `<div class="spread"><h2>Teams</h2>${isAdmin() ? `<button class="btn primary sm" data-act="team-new">+ New team</button>` : ""}</div>
+    <div style="margin:12px 0"><select id="season-filter" data-change="season-filter" aria-label="Season">
+      <option value="all" ${filter === "all" ? "selected" : ""}>All seasons</option>
+      ${S.seasons.map((s) => `<option value="${s.id}" ${filter === s.id ? "selected" : ""}>${esc(s.name)}${s.active ? " (active)" : ""}</option>`).join("")}
+    </select></div>
+    ${teams.length ? `<div class="list">${teams.map(teamItem).join("")}</div>`
+      : `<div class="card empty">${S.seasons.length ? "No teams in this season." : isAdmin() ? "Create a season first (Admin tab)." : "No teams yet."}</div>`}`;
+}
+function viewTeamDetail(t) {
+  const manage = canManageTeam(t.id);
+  const season = seasonById(t.seasonId);
+  const roster = S.players.filter((p) => (p.teamIds || []).includes(t.id))
+    .sort((a, b) => (Number(a.numbers?.[t.id] ?? 999) - Number(b.numbers?.[t.id] ?? 999)) || fullName(a).localeCompare(fullName(b)));
+  const invites = S.invites.filter((i) => i.teamId === t.id && inviteIsOpen(i));
+  const coaches = coachNamesOf(t);
+
+  let html = `<button class="btn ghost sm" data-act="team-back">‹ Teams</button>
+    <div class="spread" style="margin-top:6px"><div><h2>${esc(t.name)}</h2>
+      <div class="muted small">${[t.category, t.gender, season?.name].filter(Boolean).map(esc).join(" · ")}</div></div>
+      ${isAdmin() ? `<button class="btn sm" data-act="team-edit" data-id="${t.id}">Edit</button>` : ""}</div>
+
+    <div class="section-title">Coaches</div>
+    <div class="card">${coaches.length ? `<div class="row">${coaches.map((n) => `<span class="badge accent">${esc(n)}</span>`).join("")}</div>` : `<span class="muted">No coach assigned</span>`}
+      ${isAdmin() ? `<div class="row" style="margin-top:10px"><button class="btn sm" data-act="team-edit" data-id="${t.id}">Assign coaches</button><button class="btn sm" data-act="invite-new" data-type="coach" data-team="${t.id}">Invite new coach</button></div>` : ""}
+    </div>
+
+    <div class="section-title spread"><span>Roster (${roster.length})</span>${manage ? `<button class="btn primary sm" data-act="roster-add" data-team="${t.id}">+ Add player</button>` : ""}</div>`;
+
+  if (roster.length) {
+    html += `<div class="list">${roster.map((p) => {
+      const n = p.numbers?.[t.id];
+      const pos = [p.pos1, p.pos2].filter(Boolean).join(" / ");
+      const links = manage ? `<div class="row" style="margin-top:4px">
+          ${p.selfUid ? `<span class="badge ok">Account</span>` : ""}
+          ${(p.guardianUids || []).length ? `<span class="badge ok">${p.guardianUids.length} parent${p.guardianUids.length > 1 ? "s" : ""}</span>` : ""}
+          ${!p.selfUid && !(p.guardianUids || []).length ? `<span class="badge warn">Not linked</span>` : ""}
+          ${p.isMinor ? `<span class="badge">Minor</span>` : ""}</div>` : "";
+      return `<div class="item ${manage ? "tap" : ""}" ${manage ? `data-act="player-edit" data-id="${p.id}"` : ""}>
+        <div class="num ${n === undefined || n === null || n === "" ? "none" : ""}">${n === undefined || n === null || n === "" ? "–" : esc(n)}</div>
+        <div class="main"><div class="title">${esc(fullName(p))}</div><div class="small muted">${esc(pos) || "No position"}</div>${links}</div>
+        ${manage ? `<span class="muted">›</span>` : ""}</div>`;
+    }).join("")}</div>`;
+  } else {
+    html += `<div class="card empty">No players on this team yet.</div>`;
+  }
+
+  if (manage) {
+    html += `<div class="section-title">Open invites (${invites.length})</div>`;
+    html += invites.length ? inviteList(invites) : `<div class="card empty">No open invites. Open a player to invite them or their parents.</div>`;
+  }
+  if (isAdmin()) html += `<div style="margin-top:20px"><button class="btn danger block" data-act="team-delete" data-id="${t.id}">Delete team</button></div>`;
+  return html;
+}
+
+/* ---------- Players (staff) ---------- */
+function viewPlayers() {
+  const q = S.playerSearch.trim().toLowerCase();
+  const scope = isAdmin() ? "all" : S.playerScope;
+  let list = S.players;
+  if (scope === "mine") list = list.filter((p) => (p.teamIds || []).some((t) => coachOf().includes(t)));
+  if (q) list = list.filter((p) => fullName(p).toLowerCase().includes(q));
+  return `<div class="spread"><h2>Players</h2><button class="btn primary sm" data-act="player-new">+ New player</button></div>
+    <div class="stack" style="margin:12px 0">
+      <input type="search" id="player-search" data-input="player-search" placeholder="Search by name" value="${esc(S.playerSearch)}">
+      ${!isAdmin() ? `<div class="seg"><button data-act="player-scope" data-scope="mine" class="${scope === "mine" ? "on" : ""}">My teams</button><button data-act="player-scope" data-scope="all" class="${scope === "all" ? "on" : ""}">Whole club</button></div>` : ""}
+    </div>
+    ${list.length ? `<div class="list">${list.map((p) => {
+      const editable = canEditPlayer(p);
+      return `<div class="item ${editable ? "tap" : ""}" ${editable ? `data-act="player-edit" data-id="${p.id}"` : ""}>
+        <div class="num none">${esc(initials(fullName(p)))}</div>
+        <div class="main"><div class="title">${esc(fullName(p))}</div>
+          <div class="row" style="margin-top:3px">${teamChips(p) || `<span class="badge warn">No team</span>`}
+            ${p.isMinor ? `<span class="badge">Minor</span>` : ""}
+            ${p.selfUid ? `<span class="badge ok">Account</span>` : ""}
+            ${(p.guardianUids || []).length ? `<span class="badge ok">${p.guardianUids.length} parent${p.guardianUids.length > 1 ? "s" : ""}</span>` : ""}</div></div>
+        ${editable ? `<span class="muted">›</span>` : ""}</div>`;
+    }).join("")}</div>` : `<div class="card empty">No players found.</div>`}`;
+}
+
+/* ---------- Admin ---------- */
+function viewAdmin() {
+  const invites = S.invites.filter((i) => S.showOldInvites || inviteIsOpen(i));
+  return `<h2>Admin</h2>
+    <div class="section-title">Club</div>
+    <div class="card spread"><div><div class="title" style="font-weight:600">${esc(clubName())}</div><div class="small muted">App name: ${esc(appName())}</div></div>
+      <button class="btn sm" data-act="settings-edit">Edit</button></div>
+
+    <div class="section-title spread"><span>Seasons</span><button class="btn primary sm" data-act="season-new">+ New season</button></div>
+    ${S.seasons.length ? `<div class="list">${S.seasons.map((s) => `
+      <div class="item"><div class="main"><div class="title">${esc(s.name)} ${s.active ? `<span class="badge ok">Active</span>` : ""}</div>
+        <div class="small muted">${esc(s.startDate || "?")} → ${esc(s.endDate || "?")} · ${(() => { const n = S.teams.filter((t) => t.seasonId === s.id).length; return `${n} team${n === 1 ? "" : "s"}`; })()}</div></div>
+        ${s.active ? "" : `<button class="btn sm" data-act="season-activate" data-id="${s.id}">Set active</button>`}
+        <button class="btn sm" data-act="season-edit" data-id="${s.id}">Edit</button></div>`).join("")}</div>`
+      : `<div class="card empty">No seasons yet.</div>`}
+
+    <div class="section-title">Users (${S.users.length})</div>
+    ${S.users.length ? `<div class="list">${S.users.map(userItem).join("")}</div>` : `<div class="card empty">No users.</div>`}
+
+    <div class="section-title spread"><span>Invites</span>
+      <button class="btn ghost sm" data-act="toggle-old-invites">${S.showOldInvites ? "Hide used / expired" : "Show all"}</button></div>
+    ${invites.length ? inviteList(invites) : `<div class="card empty">No open invites.</div>`}
+
+    <div class="section-title">Activity log (last 50)</div>
+    ${S.logs.length ? `<div class="list">${S.logs.map((l) => `
+      <div class="item"><div class="main"><div class="small"><b>${esc(l.byName || "?")}</b> · ${esc(l.action)}</div>
+        <div class="small muted">${esc(fmtDateTime(l.at))}${l.details?.label ? ` · ${esc(l.details.label)}` : ""}</div></div></div>`).join("")}</div>`
+      : `<div class="card empty">Nothing logged yet.</div>`}`;
+}
+function userItem(u) {
+  const self = u.id === S.user.uid;
+  const coachTeams = (u.coachOf || []).map((tid) => teamById(tid)?.name).filter(Boolean);
+  const asPlayer = S.players.filter((p) => p.selfUid === u.id).map(fullName);
+  const asGuardian = S.players.filter((p) => (p.guardianUids || []).includes(u.id)).map(fullName);
+  const lines = [];
+  if (coachTeams.length) lines.push(`Coach: ${coachTeams.join(", ")}`);
+  if (asPlayer.length) lines.push(`Player: ${asPlayer.join(", ")}`);
+  if (asGuardian.length) lines.push(`Parent of: ${asGuardian.join(", ")}`);
+  return `<div class="item"><div class="main">
+      <div class="title">${esc(u.name || "?")} ${u.isAdmin ? `<span class="badge accent">Admin</span>` : ""} ${u.active ? "" : `<span class="badge bad">Disabled</span>`}</div>
+      <div class="small muted">${esc(u.email || "")}</div>
+      ${lines.length ? `<div class="small muted">${esc(lines.join(" · "))}</div>` : ""}</div>
+    ${self ? `<span class="badge">You</span>` : `<div class="stack" style="gap:6px">
+      <button class="btn sm" data-act="user-admin" data-id="${u.id}">${u.isAdmin ? "Remove admin" : "Make admin"}</button>
+      <button class="btn sm ${u.active ? "danger" : ""}" data-act="user-active" data-id="${u.id}">${u.active ? "Disable" : "Enable"}</button></div>`}
+  </div>`;
+}
+function inviteList(invites) {
+  return `<div class="list">${invites.map((i) => {
+    const [label, cls] = inviteStatus(i);
+    const open = label === "Open";
+    const canManage = isAdmin() || (i.teamId && coachOf().includes(i.teamId));
+    return `<div class="item"><div class="main">
+        <div class="title" style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em">${esc(i.id)} <span class="badge ${cls}">${label}</span></div>
+        <div class="small">${esc(describeInvite(i))}${i.teamName && i.type !== "coach" ? ` · ${esc(i.teamName)}` : ""}</div>
+        <div class="small muted">Used ${i.uses || 0}/${i.maxUses || 1} · Expires ${esc(fmtDate(i.expiresAt))} · by ${esc(i.createdByName || "?")}</div></div>
+      ${open ? `<div class="stack" style="gap:6px"><button class="btn sm" data-act="invite-show" data-code="${i.id}">Share</button>
+        ${canManage ? `<button class="btn sm danger" data-act="invite-deactivate" data-code="${i.id}">Cancel</button>` : ""}</div>` : ""}
+    </div>`;
+  }).join("")}</div>`;
+}
+
+/* =========================================================
+   MODALS
+   ========================================================= */
+function openModal({ title, body, submitLabel = "Save", onSubmit = null, danger = "" }) {
+  S.modal = { onSubmit };
+  $("#modal-root").innerHTML = `<div class="backdrop" data-act="modal-close"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="sheet-head"><h3>${esc(title)}</h3><button type="button" class="icon-btn" data-act="modal-close" aria-label="Close">✕</button></div>
+      <form data-form="modal" class="sheet-body" novalidate>${body}
+        ${onSubmit ? `<div class="form-actions">${danger}<span style="flex:1"></span><button type="button" class="btn" data-act="modal-close">Cancel</button><button type="submit" class="btn primary">${esc(submitLabel)}</button></div>` : ""}
+      </form></div>`;
+  document.body.style.overflow = "hidden";
+}
+function closeModal() {
+  S.modal = null;
+  $("#modal-root").innerHTML = "";
+  document.body.style.overflow = "";
+}
+
+function seasonModal(s) {
+  openModal({
+    title: s ? "Edit season" : "New season",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(s?.name || "")}" placeholder="2026/27" required></label>
+      <div class="grid2"><label class="f">Start<input type="date" name="startDate" value="${esc(s?.startDate || "")}"></label>
+      <label class="f">End<input type="date" name="endDate" value="${esc(s?.endDate || "")}"></label></div>
+      ${s ? "" : `<label class="check"><input type="checkbox" name="active" ${S.seasons.length ? "" : "checked"}> Make this the active season</label>`}`,
+    danger: s && !S.teams.some((t) => t.seasonId === s.id) ? `<button type="button" class="btn danger" data-act="season-delete" data-id="${s.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      const batch = writeBatch(db);
+      const ref = s ? doc(db, "seasons", s.id) : doc(collection(db, "seasons"));
+      const data = { name: d.name.trim(), startDate: d.startDate || "", endDate: d.endDate || "", updatedAt: serverTimestamp() };
+      if (s) batch.update(ref, data);
+      else {
+        const makeActive = !!d.active;
+        batch.set(ref, { ...data, active: makeActive, createdAt: serverTimestamp() });
+        if (makeActive) S.seasons.filter((x) => x.active).forEach((x) => batch.update(doc(db, "seasons", x.id), { active: false }));
+        if (makeActive) S.seasonFilter = ref.id;
+      }
+      log(batch, s ? "Edited season" : "Created season", { label: data.name });
+      await batch.commit();
+      toast("Season saved");
+    }
+  });
+}
+
+function teamModal(t) {
+  const staffCandidates = S.users.filter((u) => u.active);
+  const current = t?.coachUids || [];
+  const season = t?.seasonId || activeSeason()?.id || S.seasons[0]?.id || "";
+  if (!S.seasons.length) { toast("Create a season first.", "error"); return; }
+  openModal({
+    title: t ? "Edit team" : "New team",
+    body: `<label class="f">Team name<input type="text" name="name" value="${esc(t?.name || "")}" placeholder="U16 Boys" required></label>
+      <div class="grid2">
+        <label class="f">Category<input type="text" name="category" list="cat-list" value="${esc(t?.category || "")}" placeholder="U16"></label>
+        <label class="f">Gender<select name="gender">${GENDERS.map((g) => `<option ${t?.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></label>
+      </div>
+      <datalist id="cat-list">${CATEGORIES.map((c) => `<option value="${c}">`).join("")}</datalist>
+      <label class="f">Season<select name="seasonId">${S.seasons.map((s) => `<option value="${s.id}" ${season === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Coaches</div>
+      <div class="card" style="padding:6px 12px">${staffCandidates.length ? staffCandidates.map((u) => `
+        <label class="check" style="padding:8px 0"><input type="checkbox" name="coach_${u.id}" ${current.includes(u.id) ? "checked" : ""}> ${esc(u.name)} <span class="small muted">${esc(u.email || "")}</span></label>`).join("")
+        : `<div class="muted small" style="padding:8px 0">No users yet. Use “Invite new coach” on the team page.</div>`}</div>
+      <p class="small muted" style="margin:0">A coach without an account yet? Save the team, then use <b>Invite new coach</b>.</p>`,
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Team name is required.");
+      const batch = writeBatch(db);
+      const ref = t ? doc(db, "teams", t.id) : doc(collection(db, "teams"));
+      const selected = staffCandidates.filter((u) => d[`coach_${u.id}`]).map((u) => u.id);
+      // keep coaches that are not in the candidate list (e.g. disabled users)
+      const kept = current.filter((uid) => !staffCandidates.some((u) => u.id === uid));
+      const coachUids = [...new Set([...kept, ...selected])];
+      const coachNames = {};
+      coachUids.forEach((uid) => { coachNames[uid] = userById(uid)?.name || t?.coachNames?.[uid] || ""; });
+      const data = { name: d.name.trim(), category: (d.category || "").trim(), gender: d.gender, seasonId: d.seasonId,
+        coachUids, coachNames, updatedAt: serverTimestamp() };
+      if (t) batch.update(ref, data); else batch.set(ref, { ...data, createdAt: serverTimestamp() });
+      const added = coachUids.filter((u) => !current.includes(u));
+      const removed = current.filter((u) => !coachUids.includes(u));
+      added.forEach((uid) => batch.update(doc(db, "users", uid), { coachOf: arrayUnion(ref.id) }));
+      removed.forEach((uid) => batch.update(doc(db, "users", uid), { coachOf: arrayRemove(ref.id) }));
+      log(batch, t ? "Edited team" : "Created team", { label: data.name, teamId: ref.id });
+      await batch.commit();
+      toast("Team saved");
+    }
+  });
+}
+
+function playerModal(p, presetTeamId = null) {
+  const editableTeam = (tid) => isAdmin() || coachOf().includes(tid);
+  const teamIds = p?.teamIds || (presetTeamId ? [presetTeamId] : []);
+  const visibleTeams = S.teams.filter((t) => editableTeam(t.id) && (teamIds.includes(t.id) || !activeSeason() || t.seasonId === activeSeason()?.id));
+  const readOnlyTeams = teamIds.filter((tid) => !editableTeam(tid)).map(teamById).filter(Boolean);
+  const year = new Date().getFullYear();
+  const posOpts = (sel, allowNone) => `${allowNone ? `<option value="">—</option>` : `<option value="">Choose…</option>`}${POSITIONS.map(([c, l]) => `<option value="${c}" ${sel === c ? "selected" : ""}>${c} · ${l}</option>`).join("")}`;
+
+  let links = "";
+  if (p) {
+    const self = p.selfUid ? userById(p.selfUid) : null;
+    const guardians = (p.guardianUids || []).map((u) => ({ uid: u, user: userById(u) }));
+    const inviteTeam = (p.teamIds || []).find(editableTeam) || null;
+    const canInvite = isAdmin() || !!inviteTeam;
+    links = `<div class="section-title" style="margin-top:8px">Account &amp; parents</div>
+      <div class="list">
+        <div class="item"><div class="main"><div class="small muted">Player account</div>
+          <div class="title">${p.selfUid ? esc(self?.name || "Linked account") : `<span class="muted">Not linked</span>`}</div>
+          ${self?.email ? `<div class="small muted">${esc(self.email)}</div>` : ""}</div>
+          ${p.selfUid ? (isAdmin() ? `<button type="button" class="btn sm danger" data-act="unlink-self" data-id="${p.id}">Unlink</button>` : "")
+            : canInvite ? `<button type="button" class="btn sm" data-act="invite-new" data-type="player" data-player="${p.id}" data-team="${inviteTeam || ""}">Invite player</button>` : ""}
+        </div>
+        ${guardians.map((g) => `<div class="item"><div class="main"><div class="small muted">Parent / guardian</div>
+          <div class="title">${esc(g.user?.name || "Linked account")}</div>${g.user?.email ? `<div class="small muted">${esc(g.user.email)}</div>` : ""}</div>
+          ${isAdmin() ? `<button type="button" class="btn sm danger" data-act="unlink-guardian" data-id="${p.id}" data-uid="${g.uid}">Remove</button>` : ""}</div>`).join("")}
+        ${canInvite ? `<div class="item"><div class="main small muted">${p.isMinor ? "Minors are managed by a parent or guardian account." : "Add a parent or guardian account."}</div>
+          <button type="button" class="btn sm" data-act="invite-new" data-type="guardian" data-player="${p.id}" data-team="${inviteTeam || ""}">Invite parent</button></div>` : ""}
+      </div>`;
+  }
+
+  openModal({
+    title: p ? fullName(p) : "New player",
+    body: `<div class="grid2">
+        <label class="f">First name<input type="text" name="firstName" value="${esc(p?.firstName || "")}" required></label>
+        <label class="f">Last name<input type="text" name="lastName" value="${esc(p?.lastName || "")}"></label></div>
+      <div class="grid2">
+        <label class="f">Birth year<input type="number" name="birthYear" id="birth-year" inputmode="numeric" min="1930" max="${year}" value="${esc(p?.birthYear || "")}"></label>
+        <label class="check" style="margin-top:20px"><input type="checkbox" name="isMinor" id="is-minor" ${p?.isMinor ? "checked" : ""}> Minor (under 18)</label></div>
+      <div class="grid2">
+        <label class="f">1st position<select name="pos1">${posOpts(p?.pos1, false)}</select></label>
+        <label class="f">2nd position<select name="pos2">${posOpts(p?.pos2, true)}</select></label></div>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Teams &amp; jersey number</div>
+      <div class="card" style="padding:4px 12px">
+        ${visibleTeams.length ? visibleTeams.map((t) => `<div class="team-pick">
+            <label class="check"><input type="checkbox" name="team_${t.id}" ${teamIds.includes(t.id) ? "checked" : ""}> ${esc(t.name)} <span class="small muted">${esc(seasonById(t.seasonId)?.name || "")}</span></label>
+            <input type="number" name="num_${t.id}" inputmode="numeric" min="0" max="99" placeholder="#" value="${esc(p?.numbers?.[t.id] ?? "")}"></div>`).join("")
+          : `<div class="muted small" style="padding:8px 0">No teams you can manage.</div>`}
+        ${readOnlyTeams.map((t) => `<div class="team-pick"><span class="small">${esc(t.name)} <span class="muted">(other coach)</span></span><span class="small muted">#${esc(p?.numbers?.[t.id] ?? "–")}</span></div>`).join("")}
+      </div>
+      ${links}`,
+    danger: p && isAdmin() ? `<button type="button" class="btn danger" data-act="player-delete" data-id="${p.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.firstName?.trim()) throw new Error("First name is required.");
+      if (!d.pos1) throw new Error("Choose a first position.");
+      if (d.pos2 && d.pos2 === d.pos1) throw new Error("2nd position must be different from the 1st.");
+      const chosen = visibleTeams.filter((t) => d[`team_${t.id}`]).map((t) => t.id);
+      const keptReadOnly = teamIds.filter((tid) => !editableTeam(tid));
+      const newTeamIds = [...new Set([...keptReadOnly, ...chosen])];
+      if (!isAdmin() && !newTeamIds.some((tid) => coachOf().includes(tid))) throw new Error("Pick at least one of your teams.");
+      const numbers = {};
+      keptReadOnly.forEach((tid) => { if (p?.numbers?.[tid] !== undefined) numbers[tid] = p.numbers[tid]; });
+      for (const tid of chosen) {
+        const raw = d[`num_${tid}`];
+        if (raw === "" || raw === undefined) continue;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0 || n > 99) throw new Error("Jersey numbers must be 0–99.");
+        const clash = S.players.find((o) => o.id !== p?.id && (o.teamIds || []).includes(tid) && hasNum(o.numbers?.[tid]) && Number(o.numbers[tid]) === n);
+        if (clash) throw new Error(`#${n} is already used by ${fullName(clash)} in ${teamById(tid)?.name}.`);
+        numbers[tid] = n;
+      }
+      const data = {
+        firstName: d.firstName.trim(), lastName: (d.lastName || "").trim(),
+        birthYear: d.birthYear ? Number(d.birthYear) : null, isMinor: !!d.isMinor,
+        pos1: d.pos1, pos2: d.pos2 || "", teamIds: newTeamIds, numbers, updatedAt: serverTimestamp()
+      };
+      const batch = writeBatch(db);
+      const ref = p ? doc(db, "players", p.id) : doc(collection(db, "players"));
+      if (p) batch.update(ref, data);
+      else batch.set(ref, { ...data, selfUid: null, guardianUids: [], notes: "", createdAt: serverTimestamp() });
+      log(batch, p ? "Edited player" : "Created player", { label: `${data.firstName} ${data.lastName}`.trim(), playerId: ref.id });
+      await batch.commit();
+      toast("Player saved");
+    }
+  });
+  const by = $("#birth-year"), minor = $("#is-minor");
+  if (by && minor) by.addEventListener("input", () => { const y = Number(by.value); if (y > 1900) minor.checked = (year - y) < 18; });
+}
+
+function rosterAddModal(tid) {
+  const t = teamById(tid);
+  const others = S.players.filter((p) => !(p.teamIds || []).includes(tid));
+  openModal({
+    title: `Add player to ${t.name}`,
+    body: `<button type="button" class="btn primary block" data-act="player-new" data-team="${tid}">Create a new player</button>
+      ${others.length ? `<div class="section-title">Or add an existing player</div>
+      <label class="f">Player<select name="playerId"><option value="">Choose…</option>${others.map((p) => `<option value="${p.id}">${esc(fullName(p))}${(p.teamIds || []).length ? ` (${esc((p.teamIds || []).map((x) => teamById(x)?.name).filter(Boolean).join(", "))})` : ""}</option>`).join("")}</select></label>
+      <label class="f">Jersey number<input type="number" name="number" inputmode="numeric" min="0" max="99"></label>` : ""}`,
+    submitLabel: "Add to team",
+    onSubmit: others.length ? async (d) => {
+      if (!d.playerId) throw new Error("Choose a player.");
+      const p = byId(S.players, d.playerId);
+      const upd = { teamIds: arrayUnion(tid), updatedAt: serverTimestamp() };
+      if (d.number !== "" && d.number !== undefined) {
+        const n = Number(d.number);
+        if (!Number.isInteger(n) || n < 0 || n > 99) throw new Error("Jersey numbers must be 0–99.");
+        const clash = S.players.find((o) => (o.teamIds || []).includes(tid) && hasNum(o.numbers?.[tid]) && Number(o.numbers[tid]) === n);
+        if (clash) throw new Error(`#${n} is already used by ${fullName(clash)}.`);
+        upd[`numbers.${tid}`] = n;
+      }
+      const batch = writeBatch(db);
+      batch.update(doc(db, "players", p.id), upd);
+      log(batch, "Added player to team", { label: `${fullName(p)} → ${t.name}` });
+      await batch.commit();
+      toast(`${fullName(p)} added`);
+    } : null
+  });
+}
+
+function settingsModal() {
+  openModal({
+    title: "Club settings",
+    body: `<label class="f">Club name<input type="text" name="clubName" value="${esc(clubName())}" required></label>
+      <label class="f">App name<input type="text" name="appName" value="${esc(appName())}" required></label>
+      <p class="small muted" style="margin:0">Shown in the header, login screen and browser tab.</p>`,
+    onSubmit: async (d) => {
+      if (!d.clubName?.trim() || !d.appName?.trim()) throw new Error("Both names are required.");
+      const batch = writeBatch(db);
+      batch.update(doc(db, "settings", "app"), { clubName: d.clubName.trim(), appName: d.appName.trim(), updatedAt: serverTimestamp() });
+      log(batch, "Changed club settings", { label: `${d.clubName.trim()} / ${d.appName.trim()}` });
+      await batch.commit();
+      toast("Settings saved");
+    }
+  });
+}
+
+function inviteNewModal({ type, teamId, playerId }) {
+  const t = teamId ? teamById(teamId) : null;
+  const p = playerId ? byId(S.players, playerId) : null;
+  const defaultUses = type === "guardian" ? 2 : 1;
+  openModal({
+    title: `Invite ${INVITE_TYPES[type].toLowerCase()}`,
+    body: `<div class="notice">${esc(type === "coach" ? `Coach of ${t?.name}` : type === "guardian" ? `Parent / guardian of ${fullName(p)}` : `Player account for ${fullName(p)}`)}</div>
+      <div class="grid2">
+        <label class="f">Can be used<select name="maxUses">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${n === defaultUses ? "selected" : ""}>${n} time${n > 1 ? "s" : ""}</option>`).join("")}</select></label>
+        <label class="f">Expires in<select name="days">${[3, 7, 14, 30].map((n) => `<option value="${n}" ${n === 14 ? "selected" : ""}>${n} days</option>`).join("")}</select></label>
+      </div>
+      ${type === "guardian" ? `<p class="small muted" style="margin:0">Use 2 if both parents should join with the same code.</p>` : ""}`,
+    submitLabel: "Create invite",
+    onSubmit: async (d) => {
+      let code = genCode();
+      for (let i = 0; i < 3 && (await getDoc(doc(db, "invites", code))).exists(); i++) code = genCode();
+      const data = {
+        type, teamId: teamId || null, teamName: t?.name || "", playerId: playerId || null, playerName: p ? fullName(p) : "",
+        maxUses: Number(d.maxUses) || 1, uses: 0, usedBy: [], active: true,
+        expiresAt: Timestamp.fromMillis(Date.now() + (Number(d.days) || 14) * 864e5),
+        createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp()
+      };
+      const batch = writeBatch(db);
+      batch.set(doc(db, "invites", code), data);
+      log(batch, "Created invite", { label: `${code} · ${describeInvite(data)}` });
+      await batch.commit();
+      setTimeout(() => inviteShowModal(code, data), 0);
+    }
+  });
+}
+
+function inviteShowModal(code, data) {
+  const inv = data || byId(S.invites, code);
+  const link = inviteLink(code);
+  const text = `You're invited to ${appName()} (${clubName()}) as ${describeInvite(inv)}. Open ${link} or use code ${code}.`;
+  openModal({
+    title: "Invite ready",
+    body: `<div class="notice">${esc(describeInvite(inv))}</div>
+      <div class="code">${esc(code)}</div>
+      <div class="linkbox">${esc(link)}</div>
+      <div class="grid2">
+        <button type="button" class="btn" data-act="copy" data-text="${esc(link)}">Copy link</button>
+        <button type="button" class="btn primary" data-act="share" data-text="${esc(text)}" data-link="${esc(link)}">Share…</button>
+      </div>
+      <p class="small muted" style="margin:0">Valid until ${esc(fmtDate(inv.expiresAt))} · ${inv.maxUses} use${inv.maxUses > 1 ? "s" : ""}.</p>`
+  });
+}
+
+function profileModal() {
+  openModal({
+    title: "Profile",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(S.me.name || "")}" required></label>
+      <label class="f">Email<input type="email" value="${esc(S.user.email || "")}" disabled></label>
+      <label class="f">Phone<input type="text" name="phone" inputmode="tel" value="${esc(S.me.phone || "")}"></label>
+      <div class="row">${roleBadges()}</div>
+      <button type="button" class="btn block" data-act="redeem">Redeem invite code</button>
+      <button type="button" class="btn block" data-act="password-reset">Send password reset email</button>
+      <button type="button" class="btn danger block" data-act="logout">Log out</button>`,
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      await updateDoc(doc(db, "users", S.user.uid), { name: d.name.trim(), phone: (d.phone || "").trim(), updatedAt: serverTimestamp() });
+      toast("Profile saved");
+    }
+  });
+}
+
+function redeemModal(prefill = "") {
+  openModal({
+    title: "Redeem invite code",
+    body: `<label class="f">Invite code<input type="text" name="code" value="${esc(prefill)}" autocapitalize="characters" autocomplete="off" required></label>
+      <p class="small muted" style="margin:0">Use this to link another child, join a team as coach, or connect your player profile.</p>`,
+    submitLabel: "Redeem",
+    onSubmit: async (d) => {
+      const { code, data } = await fetchInvite(d.code);
+      await redeemInvite(code, data, { createProfile: false });
+      toast(`Done: ${describeInvite(data)}`);
+    }
+  });
+}
+
+/* =========================================================
+   INVITES — validate & redeem
+   ========================================================= */
+async function fetchInvite(raw) {
+  const code = normCode(raw);
+  if (code.length < 6) throw new Error("That code looks too short.");
+  const snap = await getDoc(doc(db, "invites", code));
+  if (!snap.exists()) throw new Error("Invite code not found.");
+  const data = snap.data();
+  const [label] = inviteStatus(data);
+  if (label !== "Open") throw new Error(`This invite is ${label.toLowerCase()}. Ask for a new one.`);
+  if (S.user && (data.usedBy || []).includes(S.user.uid)) throw new Error("You already used this invite.");
+  return { code, data };
+}
+
+async function redeemInvite(code, inv, { createProfile, name }) {
+  const uid = S.user.uid;
+  autoRedeemDone = true; // the local snapshot fires before commit resolves
+  const batch = writeBatch(db);
+  batch.update(doc(db, "invites", code), { uses: increment(1), usedBy: arrayUnion(uid), lastUsedAt: serverTimestamp() });
+
+  if (createProfile) {
+    batch.set(doc(db, "users", uid), {
+      name: name.trim(), email: S.user.email || "", phone: "", isAdmin: false, active: true,
+      coachOf: inv.type === "coach" ? [inv.teamId] : [], joinedWith: code, createdAt: serverTimestamp()
+    });
+  }
+
+  if (inv.type === "coach") {
+    if (!createProfile) {
+      if ((S.me?.coachOf || []).includes(inv.teamId)) throw new Error("You already coach this team.");
+      batch.update(doc(db, "users", uid), { coachOf: arrayUnion(inv.teamId), lastInvite: code, updatedAt: serverTimestamp() });
+    }
+    batch.update(doc(db, "teams", inv.teamId), {
+      coachUids: arrayUnion(uid), [`coachNames.${uid}`]: createProfile ? name.trim() : (S.me?.name || ""),
+      lastInvite: code, updatedAt: serverTimestamp()
+    });
+  } else if (inv.type === "guardian") {
+    batch.update(doc(db, "players", inv.playerId), { guardianUids: arrayUnion(uid), lastInvite: code, updatedAt: serverTimestamp() });
+  } else if (inv.type === "player") {
+    batch.update(doc(db, "players", inv.playerId), { selfUid: uid, lastInvite: code, updatedAt: serverTimestamp() });
+  }
+  await batch.commit();
+  S.pendingInvite = "";
+  if (location.search.includes("invite=")) history.replaceState(null, "", location.pathname);
+  // log after the profile exists (rules require an active profile)
+  setTimeout(() => log(null, "Redeemed invite", { label: `${code} · ${describeInvite(inv)}` }), 1500);
+}
+
+let autoRedeemDone = false;
+function maybeAutoRedeem() {
+  if (autoRedeemDone || !S.pendingInvite || !isActive()) return;
+  autoRedeemDone = true;
+  const code = S.pendingInvite;
+  S.pendingInvite = "";
+  history.replaceState(null, "", location.pathname);
+  setTimeout(() => redeemModal(code), 300);
+}
+
+/* =========================================================
+   FORM HANDLERS
+   ========================================================= */
+const FORMS = {
+  async login(d) {
+    await signInWithEmailAndPassword(auth, d.email.trim(), d.password);
+  },
+  async reset(d) {
+    await sendPasswordResetEmail(auth, d.email.trim());
+    toast("If that email has an account, a reset link is on its way.");
+    S.authMode = "login"; render();
+  },
+  async "join-check"(d) {
+    const { code, data } = await fetchInvite(d.code);
+    S.joinInvite = { code, data };
+    S.pendingInvite = code;
+    render();
+  },
+  async join(d) {
+    const { code, data } = S.joinInvite;
+    if (!d.name?.trim()) throw new Error("Name is required.");
+    await createUserWithEmailAndPassword(auth, d.email.trim(), d.password);
+    S.user = auth.currentUser;
+    S.busy = true; render();
+    try {
+      await redeemInvite(code, data, { createProfile: true, name: d.name });
+      S.joinInvite = null;
+      toast(`Welcome to ${clubName()}!`);
+    } finally { S.busy = false; render(); }
+  },
+  async complete(d) {
+    if (!d.name?.trim()) throw new Error("Name is required.");
+    const { code, data } = await fetchInvite(d.code);
+    S.busy = true; render();
+    try { await redeemInvite(code, data, { createProfile: true, name: d.name }); toast(`Welcome to ${clubName()}!`); }
+    finally { S.busy = false; render(); }
+  },
+  async setup(d) {
+    if (!d.name?.trim()) throw new Error("Your name is required.");
+    if (!S.user) {
+      await createUserWithEmailAndPassword(auth, d.email.trim(), d.password);
+      S.user = auth.currentUser;
+    }
+    S.busy = true; render();
+    try {
+      const uid = S.user.uid;
+      const batch = writeBatch(db);
+      batch.set(doc(db, "users", uid), {
+        name: d.name.trim(), email: S.user.email || "", phone: "", isAdmin: true, active: true, coachOf: [], createdAt: serverTimestamp()
+      });
+      batch.set(doc(db, "settings", "app"), {
+        clubName: (d.clubName || "BB").trim(), appName: (d.appName || "BBapp").trim(), createdBy: uid, createdAt: serverTimestamp()
+      });
+      await batch.commit();
+      toast("Club created. You are the admin.");
+    } finally { S.busy = false; render(); }
+  },
+  async modal(d, form) {
+    if (!S.modal?.onSubmit) return;
+    // checkboxes → booleans
+    form.querySelectorAll("input[type=checkbox][name]").forEach((c) => { d[c.name] = c.checked; });
+    await S.modal.onSubmit(d);
+    if (S.modal && $("#modal-root form") === form) closeModal();
+  }
+};
+
+document.addEventListener("submit", async (e) => {
+  const form = e.target;
+  const name = form.dataset?.form;
+  if (!name || !FORMS[name]) return;
+  e.preventDefault();
+  const btn = form.querySelector("[type=submit]");
+  if (btn) btn.disabled = true;
+  try {
+    const d = Object.fromEntries(new FormData(form));
+    await FORMS[name](d, form);
+  } catch (err) {
+    console.warn(err);
+    toast(errMsg(err), "error");
+  } finally {
+    if (btn && document.contains(btn)) btn.disabled = false;
+  }
+});
+
+/* =========================================================
+   CLICK ACTIONS
+   ========================================================= */
+async function confirmRun(message, fn) {
+  if (!window.confirm(message)) return;
+  try { await fn(); } catch (err) { console.warn(err); toast(errMsg(err), "error"); }
+}
+
+const ACTIONS = {
+  reload: () => location.reload(),
+  "auth-mode": (el) => { S.authMode = el.dataset.mode; render(); },
+  "join-reset": () => { S.joinInvite = null; S.pendingInvite = ""; render(); },
+  logout: async () => { closeModal(); S.tab = "home"; S.teamId = null; S.seasonFilter = null; S.authMode = "login"; S.joinInvite = null; await signOut(auth); },
+  profile: () => profileModal(),
+  redeem: () => redeemModal(),
+  "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
+  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; render(); window.scrollTo(0, 0); },
+  "modal-close": () => closeModal(),
+  "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
+  "player-scope": (el) => { S.playerScope = el.dataset.scope; render(); },
+
+  "season-new": () => seasonModal(null),
+  "season-edit": (el) => seasonModal(seasonById(el.dataset.id)),
+  "season-activate": async (el) => {
+    const s = seasonById(el.dataset.id);
+    const batch = writeBatch(db);
+    S.seasons.forEach((x) => { if (x.active || x.id === s.id) batch.update(doc(db, "seasons", x.id), { active: x.id === s.id }); });
+    log(batch, "Set active season", { label: s.name });
+    await batch.commit();
+    S.seasonFilter = s.id;
+    toast(`${s.name} is now active`);
+  },
+  "season-delete": (el) => confirmRun("Delete this season?", async () => {
+    const s = seasonById(el.dataset.id);
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "seasons", s.id));
+    log(batch, "Deleted season", { label: s.name });
+    await batch.commit();
+    if (S.seasonFilter === s.id) S.seasonFilter = "all";
+    closeModal(); toast("Season deleted");
+  }),
+
+  "team-new": () => teamModal(null),
+  "team-edit": (el) => teamModal(teamById(el.dataset.id)),
+  "team-open": (el) => { S.tab = "teams"; S.teamId = el.dataset.id; render(); window.scrollTo(0, 0); },
+  "team-back": () => { S.teamId = null; render(); },
+  "team-delete": (el) => {
+    const t = teamById(el.dataset.id);
+    confirmRun(`Delete ${t.name}? Players stay in the club but are removed from this team.`, async () => {
+      const batch = writeBatch(db);
+      S.players.filter((p) => (p.teamIds || []).includes(t.id)).forEach((p) =>
+        batch.update(doc(db, "players", p.id), { teamIds: arrayRemove(t.id), [`numbers.${t.id}`]: deleteField(), updatedAt: serverTimestamp() }));
+      (t.coachUids || []).forEach((uid) => { if (userById(uid)) batch.update(doc(db, "users", uid), { coachOf: arrayRemove(t.id) }); });
+      S.invites.filter((i) => i.teamId === t.id && i.active).forEach((i) => batch.update(doc(db, "invites", i.id), { active: false }));
+      batch.delete(doc(db, "teams", t.id));
+      log(batch, "Deleted team", { label: t.name });
+      await batch.commit();
+      S.teamId = null; toast("Team deleted");
+    });
+  },
+  "roster-add": (el) => rosterAddModal(el.dataset.team),
+
+  "player-new": (el) => playerModal(null, el.dataset.team || null),
+  "player-edit": (el) => { const p = byId(S.players, el.dataset.id); if (p) playerModal(p); },
+  "player-delete": (el) => {
+    const p = byId(S.players, el.dataset.id);
+    confirmRun(`Delete ${fullName(p)} permanently?`, async () => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "players", p.id));
+      log(batch, "Deleted player", { label: fullName(p) });
+      await batch.commit();
+      closeModal(); toast("Player deleted");
+    });
+  },
+  "unlink-self": (el) => {
+    const p = byId(S.players, el.dataset.id);
+    confirmRun(`Unlink the account from ${fullName(p)}?`, async () => {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "players", p.id), { selfUid: null, updatedAt: serverTimestamp() });
+      log(batch, "Unlinked player account", { label: fullName(p) });
+      await batch.commit();
+      closeModal(); toast("Account unlinked");
+    });
+  },
+  "unlink-guardian": (el) => {
+    const p = byId(S.players, el.dataset.id);
+    const uid = el.dataset.uid;
+    confirmRun(`Remove ${userById(uid)?.name || "this parent"} from ${fullName(p)}?`, async () => {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "players", p.id), { guardianUids: arrayRemove(uid), updatedAt: serverTimestamp() });
+      log(batch, "Removed parent link", { label: `${userById(uid)?.name || uid} ✕ ${fullName(p)}` });
+      await batch.commit();
+      closeModal(); toast("Parent removed");
+    });
+  },
+
+  "invite-new": (el) => inviteNewModal({ type: el.dataset.type, teamId: el.dataset.team || null, playerId: el.dataset.player || null }),
+  "invite-show": (el) => inviteShowModal(el.dataset.code),
+  "invite-deactivate": (el) => confirmRun(`Cancel invite ${el.dataset.code}?`, async () => {
+    const batch = writeBatch(db);
+    batch.update(doc(db, "invites", el.dataset.code), { active: false, updatedAt: serverTimestamp() });
+    log(batch, "Cancelled invite", { label: el.dataset.code });
+    await batch.commit();
+    toast("Invite cancelled");
+  }),
+  copy: async (el) => {
+    try { await navigator.clipboard.writeText(el.dataset.text); toast("Copied"); }
+    catch (_) { window.prompt("Copy this:", el.dataset.text); }
+  },
+  share: async (el) => {
+    if (navigator.share) { try { await navigator.share({ title: appName(), text: el.dataset.text }); } catch (_) {} }
+    else { try { await navigator.clipboard.writeText(el.dataset.text); toast("Message copied"); } catch (_) { window.prompt("Copy this:", el.dataset.text); } }
+  },
+
+  settings: () => settingsModal(),
+  "settings-edit": () => settingsModal(),
+  "user-admin": (el) => {
+    const u = userById(el.dataset.id);
+    confirmRun(u.isAdmin ? `Remove admin rights from ${u.name}?` : `Make ${u.name} an admin? Admins can change everything.`, async () => {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", u.id), { isAdmin: !u.isAdmin, updatedAt: serverTimestamp() });
+      log(batch, u.isAdmin ? "Removed admin" : "Made admin", { label: u.name });
+      await batch.commit();
+    });
+  },
+  "user-active": (el) => {
+    const u = userById(el.dataset.id);
+    confirmRun(u.active ? `Disable ${u.name}? They won't be able to use the app.` : `Enable ${u.name}?`, async () => {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", u.id), { active: !u.active, updatedAt: serverTimestamp() });
+      log(batch, u.active ? "Disabled user" : "Enabled user", { label: u.name });
+      await batch.commit();
+    });
+  }
+};
+
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.act];
+  if (!fn) return;
+  e.preventDefault();
+  try { await fn(el); } catch (err) { console.warn(err); toast(errMsg(err), "error"); }
+});
+document.addEventListener("input", (e) => {
+  if (e.target.dataset?.input === "player-search") { S.playerSearch = e.target.value; render(); }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.dataset?.change === "season-filter") { S.seasonFilter = e.target.value; render(); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.modal !== null) closeModal(); });
+
+render();
+</script>
+</body>
+</html>
