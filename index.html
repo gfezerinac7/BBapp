@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>BBapp</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="BBapp">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%231d4ed8'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='%23ffffff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -178,6 +182,8 @@ table.tbl tbody tr:last-child td{border-bottom:none}
 table.tbl tr.us{background:var(--accent-soft);font-weight:700}
 table.box input{width:58px;padding:6px;text-align:center;font-size:15px}
 table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--accent)}
+.weeknav{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 8px}
+.weeknav .wk{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px}
 </style>
 </head>
 <body>
@@ -189,14 +195,15 @@ table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, writeBatch,
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging.js";
+import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
   serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, where, orderBy, limit, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.8";
+const VERSION = "v-0.9";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -209,6 +216,8 @@ const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
 
+const VAPID_KEY = "BI5CmUYsogmRwMySXmpVcyHAD-avPyilWSzF6w1V98vH46Cy-tR3HQFP3idIx5WFgNlc2aGMjEAyQflR-wOUL1I";
+
 const POSITIONS = [["PG","Point Guard"],["SG","Shooting Guard"],["SF","Small Forward"],["PF","Power Forward"],["C","Center"]];
 const CATEGORIES = ["U8","U10","U12","U14","U16","U18","U20","Senior","Veterans"];
 const GENDERS = ["Men","Women","Mixed"];
@@ -219,10 +228,10 @@ const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
    ========================================================= */
 const S = {
   settings: null, settingsLoaded: false, dbError: null,
-  user: null, me: null, meLoaded: false, meSynced: false,
+  user: null, me: null, meLoaded: false, meSynced: false, pushOn: false,
   myMember: null, memberSynced: true, busy: false,
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
-  events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", eventId: null,
+  events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", calType: "all", weekStart: null, eventId: null,
   announcements: [], tournaments: [], tournamentGames: [], gameStats: {}, referees: [], volunteers: [], fees: [], feePayments: [], myPayments: {},
   statSettings: null, teamTab: "roster", tournamentId: null, statMode: "total", feeId: null,
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
@@ -364,6 +373,7 @@ onAuthStateChanged(auth, (u) => {
         syncMemberListener();
         syncDataSubs();
         render();
+        initPush();
         maybeMigrateLegacy();
         maybeAutoRedeem();
       },
@@ -494,6 +504,58 @@ function newMemberData(o) {
     pos1: o.pos1 || "", pos2: o.pos2 || "", playerTeamId: o.playerTeamId || null, number: hasNum(o.number) ? o.number : null,
     coachTeamIds: o.coachTeamIds || [], uid: o.uid || null, guardianUids: [], createdAt: serverTimestamp(), updatedAt: serverTimestamp()
   };
+}
+
+/* =========================================================
+   PUSH NOTIFICATIONS (v-0.9)
+   ========================================================= */
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent);
+const isStandalone = () => window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+const pushState = () => {
+  if (!("Notification" in window) || !navigator.serviceWorker) return "unsupported";
+  if (isIOS() && !isStandalone()) return "ios-home-screen";
+  if (Notification.permission === "denied") return "blocked";
+  if (Notification.permission === "granted") return S.pushOn ? "on" : "granted";
+  return "off";
+};
+let messaging = null, swReg = null, pushInit = false;
+async function initPush() {
+  if (pushInit || !isActive()) return;
+  pushInit = true;
+  try {
+    if (!(await isSupported().catch(() => false))) return;
+    swReg = await navigator.serviceWorker.register("firebase-messaging-sw.js", { scope: "./" });
+    messaging = getMessaging(fbApp);
+    onMessage(messaging, (payload) => {
+      const d = payload.data || payload.notification || {};
+      toast(`${d.title || "BBapp"}${d.body ? ` — ${d.body}` : ""}`);
+    });
+    if (Notification.permission === "granted") enablePush(true);
+  } catch (err) { console.warn("[push]", err); }
+}
+async function enablePush(silent = false) {
+  try {
+    if (!messaging) { if (!silent) toast("This browser can't do notifications.", "error"); return; }
+    if (isIOS() && !isStandalone()) { if (!silent) toast("On iPhone, add BBapp to your Home Screen first.", "error"); return; }
+    const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (perm !== "granted") { if (!silent) toast("Notifications are blocked. Allow them in your browser settings.", "error"); render(); return; }
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+    if (!token) { if (!silent) toast("Could not get a notification token.", "error"); return; }
+    await setDoc(doc(db, "pushTokens", token), { uid: S.user.uid, name: S.me?.name || "",
+      ua: (navigator.userAgent || "").slice(0, 180), updatedAt: serverTimestamp() }, { merge: true });
+    S.pushOn = true;
+    if (!silent) toast("Notifications are on for this device.");
+    render();
+  } catch (err) { console.warn("[push]", err); if (!silent) toast(errMsg(err), "error"); }
+}
+/** Queue a notification. The Cloud Function resolves who gets it and sends it. */
+function queuePush(batch, { title, body, url = "", tag = "", teamIds = [], memberIds = [], uids = [], everyone = false, reason = "" }) {
+  if (!S.user) return;
+  const data = { title, body, url: url || location.href.split("?")[0], tag, teamIds, memberIds, uids, everyone,
+    reason, excludeUid: S.user.uid, status: "pending", createdBy: S.user.uid, createdByName: S.me?.name || "", createdAt: serverTimestamp() };
+  const ref = doc(collection(db, "pushQueue"));
+  if (batch) batch.set(ref, data);
+  else setDoc(ref, data).catch((err) => console.warn("[push queue]", err));
 }
 
 /* =========================================================
@@ -792,14 +854,14 @@ function viewAdmin() {
 
     <div class="section-title spread"><span>Club fees</span><button class="btn primary sm" data-act="fee-new">+ New fee</button></div>
     ${S.fees.length ? `<div class="list">${S.fees.map((f) => {
-      const members = feeMembers(f); const paid = members.filter((m) => feePaid(f.id, m.id)).length;
+      const { members, paid } = feeTotals(f);
       return `<div class="item tap" data-act="fee-open" data-id="${f.id}"><div class="main"><div class="title">${esc(f.name)} <span class="badge ${paid === members.length && members.length ? "ok" : "warn"}">${paid}/${members.length} paid</span></div>
         <div class="small muted">${esc(feeMoney(f))}${f.dueDate ? ` · due ${esc(fmtDay(f.dueDate, { day: "numeric", month: "short" }))}` : ""}</div></div><span class="muted">›</span></div>`;
     }).join("")}</div>` : `<div class="card empty">No fees yet.</div>`}
 
     <div class="section-title spread"><span>Referees</span><button class="btn primary sm" data-act="referee-new">+ New referee</button></div>
     ${S.referees.length ? `<div class="list">${S.referees.map((r) => `<div class="item tap" data-act="referee-edit" data-id="${r.id}"><div class="main"><div class="title">${esc(r.name)} ${r.active === false ? `<span class="badge">Not available</span>` : ""}</div>
-      <div class="small muted">${[r.level, r.phone].filter(Boolean).map(esc).join(" · ") || "No details"}</div></div><span class="muted">›</span></div>`).join("")}</div>`
+      <div class="small muted">${[r.phone, r.email].filter(Boolean).map(esc).join(" · ") || "No details"}</div></div><span class="muted">›</span></div>`).join("")}</div>`
       : `<div class="card empty">No referees yet.</div>`}
 
     <div class="section-title spread"><span>Statistics</span><button class="btn sm" data-act="stats-settings">Edit</button></div>
@@ -1001,7 +1063,6 @@ function memberModal(m, preset = {}) {
       if (admin) { data.roles = nr; data.coachTeamIds = []; }
       if (nr.player) {
         if (!d.pos1) throw new Error("Choose the player's 1st position.");
-        if (d.pos2 && d.pos2 === d.pos1) throw new Error("2nd position must be different from the 1st.");
         if (!admin && !d.playerTeamId) throw new Error("Choose one of your teams.");
         data.pos1 = d.pos1; data.pos2 = d.pos2 || ""; data.playerTeamId = d.playerTeamId || null;
         if (hasNum(d.number)) {
@@ -1165,6 +1226,21 @@ function profileModal() {
       <label class="f">Email<input type="email" value="${esc(S.user.email || "")}" disabled></label>
       <label class="f">Phone<input type="text" name="phone" inputmode="tel" value="${esc(S.me.phone || "")}"></label>
       <div class="row">${myBadges()}</div>
+      ${(() => {
+        const st = pushState();
+        const map = {
+          on: [`<span class="badge ok">Notifications on</span>`, "Turn on again"],
+          granted: [`<span class="badge warn">Allowed, not registered</span>`, "Enable notifications"],
+          off: ["", "Enable notifications"],
+          blocked: [`<span class="badge bad">Blocked in the browser</span>`, ""],
+          "ios-home-screen": [`<span class="badge warn">Add BBapp to your Home Screen first</span>`, ""],
+          unsupported: [`<span class="badge">Not supported in this browser</span>`, ""]
+        }[st] || ["", ""];
+        return `<div class="stack" style="gap:6px"><div class="small">Notifications ${map[0]}</div>
+          ${map[1] ? `<button type="button" class="btn block" data-act="push-enable">${map[1]}</button>` : ""}
+          ${st === "ios-home-screen" ? `<div class="small muted">Safari → Share → Add to Home Screen, then open BBapp from the icon.</div>` : ""}
+          ${st === "blocked" ? `<div class="small muted">Allow notifications for this site in your browser settings, then come back.</div>` : ""}</div>`;
+      })()}
       <button type="button" class="btn block" data-act="redeem">Redeem invite code</button>
       <button type="button" class="btn block" data-act="password-reset">Send password reset email</button>
       <button type="button" class="btn danger block" data-act="logout">Log out</button>`,
@@ -1328,12 +1404,13 @@ const ACTIONS = {
   "auth-mode": (el) => { S.authMode = el.dataset.mode; render(); },
   "join-reset": () => { S.joinInvite = null; S.pendingInvite = ""; render(); },
   logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null,
-    teamTab: "roster", tournamentId: null, feeId: null, myPayments: {} });
+    teamTab: "roster", tournamentId: null, feeId: null, myPayments: {}, calType: "all", weekStart: null });
   feeFetch = new Set(); await signOut(auth); },
   profile: () => profileModal(),
   redeem: () => redeemModal(),
+  "push-enable": () => enablePush(false),
   "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
-  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; render(); window.scrollTo(0, 0); },
+  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
   "modal-close": () => closeModal(),
   "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
   "member-scope": (el) => { S.memberScope = el.dataset.scope; render(); },
@@ -1582,8 +1659,13 @@ function syncAttendanceSubs() {
   }
   const ids = new Set();
   if (S.eventId) ids.add(S.eventId);
-  const { upcoming, past } = visibleEvents();
-  const pool = S.tab === "calendar" ? (S.calView === "past" ? past : upcoming) : upcoming.filter(isMyEvent);
+  const { upcoming } = visibleEvents("all");
+  let pool = upcoming.filter(isMyEvent);
+  if (S.tab === "calendar" && S.weekStart) {
+    const from = S.weekStart, to = isoAdd(S.weekStart, 6);
+    pool = [...calendarEvents().filter((e) => e.date >= from && e.date <= to), ...pool];
+  }
+  if (S.tab === "teams" && S.teamId) pool = [...S.events.filter((e) => e.teamId === S.teamId).slice(-40), ...pool];
   pool.slice(0, 60).forEach((e) => ids.add(e.id));
   const list = [...ids].sort();
   const key = list.join(",");
@@ -1660,15 +1742,36 @@ function eventCard(e, { showTeam = true } = {}) {
       </div>`).join("") : ""}
   </div>`;
 }
+const DAY_MS = 864e5;
+function isoAdd(iso, days) { const d = new Date(`${iso}T12:00`); d.setDate(d.getDate() + days); return localISO(d); }
+function mondayOf(iso) { const d = new Date(`${iso}T12:00`); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); return localISO(d); }
+function weekLabel(start) {
+  const a = new Date(`${start}T12:00`), b = new Date(`${isoAdd(start, 6)}T12:00`);
+  const sameMonth = a.getMonth() === b.getMonth();
+  const fmt = (d, withMonth) => `${d.getDate()}${withMonth ? ` ${d.toLocaleDateString("en-GB", { month: "short" })}` : ""}`;
+  return `${fmt(a, !sameMonth)} – ${fmt(b, true)}${a.getFullYear() !== new Date().getFullYear() ? ` ${a.getFullYear()}` : ""}`;
+}
+function calendarEvents() {
+  let list = S.events;
+  if (S.calTeam === "mine") list = list.filter(isMyEvent);
+  else if (S.calTeam !== "all") list = list.filter((e) => e.teamId === S.calTeam);
+  if (S.calType !== "all") list = list.filter((e) => e.type === S.calType);
+  return list.sort((a, b) => eventStart(a) - eventStart(b));
+}
 function viewCalendar() {
   if (S.eventId && eventById(S.eventId)) return viewEventDetail(eventById(S.eventId));
   S.eventId = null;
   if (S.calTeam === "mine" && !myTeamIds().length && isStaff()) S.calTeam = "all";
+  if (!S.weekStart) S.weekStart = mondayOf(todayISO());
   const manageable = S.teams.filter((t) => canManageTeam(t.id));
   const season = activeSeason();
   const teamOptions = S.teams.filter((t) => !season || t.seasonId === season.id);
-  const { upcoming, past } = visibleEvents();
-  const list = (S.calView === "past" ? past : upcoming).slice(0, 60);
+  const all = calendarEvents();
+  const from = S.weekStart, to = isoAdd(S.weekStart, 6);
+  const week = all.filter((e) => e.date >= from && e.date <= to);
+  const thisWeek = mondayOf(todayISO());
+  const chip = (k, l) => `<button data-act="cal-type" data-type="${k}" class="${S.calType === k ? "on" : ""}">${l}</button>`;
+
   let html = `<div class="spread"><h2>Calendar</h2>${manageable.length ? `<button class="btn primary sm" data-act="event-new">+ New event</button>` : ""}</div>
     <div class="stack" style="margin:12px 0">
       <select data-change="cal-team" aria-label="Team">
@@ -1676,16 +1779,32 @@ function viewCalendar() {
         <option value="all" ${S.calTeam === "all" ? "selected" : ""}>All teams</option>
         ${teamOptions.map((t) => `<option value="${t.id}" ${S.calTeam === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
       </select>
-      <div class="seg"><button data-act="cal-view" data-view="upcoming" class="${S.calView !== "past" ? "on" : ""}">Upcoming</button><button data-act="cal-view" data-view="past" class="${S.calView === "past" ? "on" : ""}">Past</button></div>
+      <div class="seg">${chip("all", "All")}${chip("practice", "Practices")}${chip("game", "Games")}</div>
+      <div class="weeknav">
+        <button class="btn sm" data-act="week-move" data-d="-7" aria-label="Previous week">‹</button>
+        <div class="wk"><b>${esc(weekLabel(S.weekStart))}</b>${S.weekStart === thisWeek ? `<span class="badge accent">This week</span>` : ""}</div>
+        <button class="btn sm" data-act="week-move" data-d="7" aria-label="Next week">›</button>
+      </div>
+      ${S.weekStart !== thisWeek ? `<button class="btn ghost sm" data-act="week-today">Back to this week</button>` : ""}
     </div>`;
-  if (!list.length) {
-    html += `<div class="card empty">${S.calTeam === "mine" && !myTeamIds().length ? "You're not on a team yet. Choose “All teams” to see the club calendar." : S.calView === "past" ? "No past events." : "No upcoming events."}</div>`;
+
+  if (!week.length) {
+    const next = all.find((e) => e.date > to);
+    const prev = [...all].reverse().find((e) => e.date < from);
+    html += `<div class="card empty">No ${S.calType === "game" ? "games" : S.calType === "practice" ? "practices" : "events"} this week.</div>
+      <div class="row" style="margin-top:10px;justify-content:center">
+        ${prev ? `<button class="btn sm" data-act="week-goto" data-date="${prev.date}">‹ ${esc(fmtDay(prev.date, { day: "numeric", month: "short" }))}</button>` : ""}
+        ${next ? `<button class="btn sm" data-act="week-goto" data-date="${next.date}">Next: ${esc(fmtDay(next.date, { weekday: "short", day: "numeric", month: "short" }))} ›</button>` : ""}
+      </div>`;
     return html;
   }
   let lastDay = "";
   html += `<div class="stack">`;
-  list.forEach((e) => {
-    if (e.date !== lastDay) { lastDay = e.date; html += `<div class="section-title" style="margin:10px 2px 0">${esc(fmtDay(e.date))}${e.date === todayISO() ? " · Today" : ""}</div>`; }
+  week.forEach((e) => {
+    if (e.date !== lastDay) {
+      lastDay = e.date;
+      html += `<div class="section-title" style="margin:10px 2px 0">${esc(fmtDay(e.date))}${e.date === todayISO() ? " · Today" : ""}</div>`;
+    }
     html += eventCard(e);
   });
   html += `</div>`;
@@ -1884,6 +2003,11 @@ function eventModal(e) {
       const batch = writeBatch(db);
       if (e) {
         batch.update(doc(db, "events", e.id), { ...base, ...timing(d.date) });
+        if (e.date !== d.date || e.startTime !== d.startTime || (e.venueId || null) !== (d.venueId || null)) {
+          queuePush(batch, { title: "Event changed",
+            body: `${eventTitle({ ...e, ...base })} · now ${fmtDay(d.date, { weekday: "short", day: "numeric", month: "short" })} ${d.startTime}`,
+            teamIds: [d.teamId], tag: `moved_${e.id}`, reason: "event-changed" });
+        }
         let n = 1;
         if (d.applySeries && e.seriesId) {
           S.events.filter((x) => x.seriesId === e.seriesId && x.id !== e.id && x.date > e.date).forEach((x) => {
@@ -2039,9 +2163,17 @@ function venueModal(v) {
 
 Object.assign(ACTIONS, {
   "cal-view": (el) => { S.calView = el.dataset.view; render(); },
+  "cal-type": (el) => { S.calType = el.dataset.type; render(); },
+  "week-move": (el) => { S.weekStart = isoAdd(S.weekStart || mondayOf(todayISO()), Number(el.dataset.d)); render(); window.scrollTo(0, 0); },
+  "week-today": () => { S.weekStart = mondayOf(todayISO()); render(); },
+  "week-goto": (el) => { S.weekStart = mondayOf(el.dataset.date); render(); window.scrollTo(0, 0); },
   "event-new": () => eventModal(null),
   "event-edit": (el) => eventModal(eventById(el.dataset.id)),
-  "event-open": (el) => { S.tab = "calendar"; S.eventId = el.dataset.id; render(); window.scrollTo(0, 0); },
+  "event-open": (el) => {
+    const e = eventById(el.dataset.id);
+    if (e) S.weekStart = mondayOf(e.date);
+    S.tab = "calendar"; S.eventId = el.dataset.id; render(); window.scrollTo(0, 0);
+  },
   "event-back": () => { S.eventId = null; render(); },
   "event-cancel": (el) => {
     const e = eventById(el.dataset.id);
@@ -2049,6 +2181,9 @@ Object.assign(ACTIONS, {
     confirmRun(cancel ? `Cancel ${eventTitle(e)} on ${e.date}?` : "Restore this event?", async () => {
       const batch = writeBatch(db);
       batch.update(doc(db, "events", e.id), { status: cancel ? "cancelled" : "scheduled", updatedAt: serverTimestamp() });
+      queuePush(batch, { title: cancel ? "Event cancelled" : "Event is on again",
+        body: `${eventTitle(e)} · ${fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" })} ${e.startTime || ""}`,
+        teamIds: [e.teamId], memberIds: callUpPublished(e) ? (e.callUpIds || []) : [], tag: `status_${e.id}`, reason: "event-status" });
       log(batch, cancel ? "Cancelled event" : "Restored event", { label: `${eventTitle(e)} · ${e.date}` });
       await batch.commit();
       toast(cancel ? "Event cancelled" : "Event restored");
@@ -2192,6 +2327,10 @@ async function saveCallUp(e, ids, publish) {
   const data = { callUpIds: ids, callUpPublished: publish, callUpBy: S.user.uid, callUpByName: S.me.name || "", callUpUpdatedAt: serverTimestamp(), updatedAt: serverTimestamp() };
   if (publish && !callUpPublished(e)) data.callUpPublishedAt = serverTimestamp();
   batch.update(doc(db, "events", e.id), data);
+  if (publish) {
+    queuePush(batch, { title: "Call-up published", body: `${eventTitle(e)} · ${fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" })} ${e.startTime || ""}`,
+      memberIds: ids, tag: `callup_${e.id}`, reason: "callup" });
+  }
   log(batch, publish ? "Published call-up" : "Saved call-up draft", { label: `${eventTitle(e)} · ${e.date} · ${ids.length} players` });
   await batch.commit();
 }
@@ -2257,7 +2396,11 @@ function newsModal(a) {
       const batch = writeBatch(db);
       const ref = a ? doc(db, "announcements", a.id) : doc(collection(db, "announcements"));
       if (a) batch.update(ref, data);
-      else batch.set(ref, { ...data, createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+      else {
+        batch.set(ref, { ...data, createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+        queuePush(batch, { title: `📣 ${data.title}`, body: (data.body || "").slice(0, 140) || clubName(),
+          teamIds: data.teamIds, everyone: !data.teamIds.length, tag: `news_${ref.id}`, reason: "announcement" });
+      }
       log(batch, a ? "Edited announcement" : "Posted announcement", { label: data.title });
       await batch.commit();
       toast(a ? "Announcement saved" : "Announcement posted");
@@ -2537,8 +2680,9 @@ function teamStatsView(t) {
   }
   if (leader && leader.gp) html += `<div class="card stat" style="margin-bottom:12px"><div class="label">Top scorer</div><div class="big">${esc(fullName(leader.m))}</div>
     <div class="small muted">${leader.totals.pts} points in ${plural(leader.gp, "game")} · ${(leader.totals.pts / leader.gp).toFixed(1)} per game</div></div>`;
-  html += `<div class="table-wrap"><table class="tbl"><thead><tr><th class="l">Player</th><th>GP</th>${stats.map((s) => `<th>${s.l}</th>`).join("")}</tr></thead>
-    <tbody>${sorted.map((r) => `<tr><td class="l">${hasNum(r.m.number) ? `#${esc(r.m.number)} ` : ""}${esc(fullName(r.m))}</td><td>${r.gp}</td>${stats.map((s) => `<td>${val(r, s.k)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  html += `<div class="table-wrap"><table class="tbl"><thead><tr><th class="l">Player</th><th>GP</th><th title="Points per game">PPG</th>${stats.map((s) => `<th>${s.l}</th>`).join("")}</tr></thead>
+    <tbody>${sorted.map((r) => `<tr><td class="l">${hasNum(r.m.number) ? `#${esc(r.m.number)} ` : ""}${esc(fullName(r.m))}</td><td>${r.gp}</td>
+      <td><b>${r.gp ? (r.totals.pts / r.gp).toFixed(1) : "0.0"}</b></td>${stats.map((s) => `<td>${val(r, s.k)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   return html;
 }
 function statSettingsModal() {
@@ -2703,14 +2847,14 @@ function refereeSection(e, manage) {
   if (!manage && !list.length) return "";
   return `<div class="section-title spread"><span>Referees</span>${manage && !isPast(e) ? `<button class="btn sm" data-act="ref-assign" data-id="${e.id}">Assign</button>` : ""}</div>
     ${list.length ? `<div class="list">${list.map((r) => `<div class="item"><div class="main"><div class="title">${esc(r.name)}</div>
-      <div class="small muted">${[r.level, manage ? r.phone : ""].filter(Boolean).map(esc).join(" · ")}</div></div></div>`).join("")}</div>`
+      <div class="small muted">${(manage ? [r.phone, r.email] : []).filter(Boolean).map(esc).join(" · ")}</div></div></div>`).join("")}</div>`
       : `<div class="card empty">No referee assigned.</div>`}`;
 }
 function refereeAssignModal(e) {
   const active = S.referees.filter((r) => r.active !== false);
   openModal({
     title: "Assign referees",
-    body: active.length ? `<div class="card" style="padding:6px 12px">${active.map((r) => `<label class="check" style="padding:8px 0"><input type="checkbox" name="ref_${r.id}" ${(e.refereeIds || []).includes(r.id) ? "checked" : ""}> ${esc(r.name)} <span class="small muted">${esc(r.level || "")}</span></label>`).join("")}</div>`
+    body: active.length ? `<div class="card" style="padding:6px 12px">${active.map((r) => `<label class="check" style="padding:8px 0"><input type="checkbox" name="ref_${r.id}" ${(e.refereeIds || []).includes(r.id) ? "checked" : ""}> ${esc(r.name)} <span class="small muted">${esc(r.email || r.phone || "")}</span></label>`).join("")}</div>`
       : `<div class="card empty">No referees yet. Add them in <b>Admin → Referees</b>.</div>`,
     submitLabel: "Save",
     onSubmit: active.length ? async (d) => {
@@ -2727,14 +2871,14 @@ function refereeModal(r) {
   openModal({
     title: r ? "Edit referee" : "New referee",
     body: `<label class="f">Name<input type="text" name="name" value="${esc(r?.name || "")}" required></label>
-      <div class="grid2"><label class="f">Level<input type="text" name="level" value="${esc(r?.level || "")}" placeholder="Regional"></label>
+      <div class="grid2"><label class="f">Email<input type="email" name="email" value="${esc(r?.email || "")}"></label>
         <label class="f">Phone<input type="text" name="phone" inputmode="tel" value="${esc(r?.phone || "")}"></label></div>
       <label class="check"><input type="checkbox" name="active" ${r?.active !== false ? "checked" : ""}> Available this season</label>
       <label class="f">Notes<input type="text" name="notes" value="${esc(r?.notes || "")}"></label>`,
     danger: r ? `<button type="button" class="btn danger" data-act="referee-delete" data-id="${r.id}">Delete</button>` : "",
     onSubmit: async (d) => {
       if (!d.name?.trim()) throw new Error("Name is required.");
-      const data = { name: d.name.trim(), level: (d.level || "").trim(), phone: (d.phone || "").trim(),
+      const data = { name: d.name.trim(), email: (d.email || "").trim(), phone: (d.phone || "").trim(),
         notes: (d.notes || "").trim(), active: !!d.active, updatedAt: serverTimestamp() };
       const batch = writeBatch(db);
       const ref = r ? doc(db, "referees", r.id) : doc(collection(db, "referees"));
@@ -2749,15 +2893,33 @@ function refereeModal(r) {
 /* ---------- club fees ---------- */
 const feeById = (id) => byId(S.fees, id);
 const feeKey = (feeId, memberId) => `${feeId}_${memberId}`;
+function feeTeamIds(f) { return Object.keys(f.teamAmounts || {}).length ? Object.keys(f.teamAmounts) : (f.teamIds || []); }
+function feeAmount(f, m) {
+  const perTeam = f.teamAmounts?.[m?.playerTeamId];
+  return Number(hasNum(perTeam) ? perTeam : (f.amount ?? 0));
+}
 function feeMembers(f) {
-  return sortMembers(S.members.filter((m) => roles(m).player && (!(f.teamIds || []).length || (f.teamIds || []).includes(m.playerTeamId))));
+  const ids = feeTeamIds(f);
+  return sortMembers(S.members.filter((m) => roles(m).player && (!ids.length || ids.includes(m.playerTeamId))));
 }
 function paymentFor(feeId, memberId) {
   const key = feeKey(feeId, memberId);
   return byId(S.feePayments, key) || S.myPayments[key] || null;
 }
 const feePaid = (feeId, memberId) => paymentFor(feeId, memberId)?.status === "paid";
-function feeMoney(f) { return `${f.amount} ${f.currency || "DKK"}`; }
+function feeMoney(f, m) {
+  const cur = f.currency || "DKK";
+  if (m) return `${feeAmount(f, m)} ${cur}`;
+  const vals = [...new Set(feeTeamIds(f).map((t) => Number(f.teamAmounts?.[t] ?? f.amount ?? 0)))].sort((a, b) => a - b);
+  if (!vals.length) return `${f.amount ?? 0} ${cur}`;
+  return vals.length === 1 ? `${vals[0]} ${cur}` : `${vals[0]}–${vals[vals.length - 1]} ${cur}`;
+}
+function feeTotals(f) {
+  const members = feeMembers(f);
+  let total = 0, collected = 0, paid = 0;
+  members.forEach((m) => { const a = feeAmount(f, m); total += a; if (feePaid(f.id, m.id)) { collected += a; paid++; } });
+  return { members, total, collected, paid };
+}
 
 // players and parents read only their own payment docs
 let feeFetch = new Set();
@@ -2766,7 +2928,8 @@ async function loadMyPayments() {
   const mine = linkedMembers().filter((m) => roles(m).player);
   for (const f of S.fees) {
     for (const m of mine) {
-      if (!(f.teamIds || []).length || (f.teamIds || []).includes(m.playerTeamId)) {
+      const ids = feeTeamIds(f);
+      if (!ids.length || ids.includes(m.playerTeamId)) {
         const key = feeKey(f.id, m.id);
         if (feeFetch.has(key)) continue;
         feeFetch.add(key);
@@ -2783,38 +2946,49 @@ function homeFeeSection() {
   if (!mine.length || !S.fees.length) return "";
   const rows = [];
   S.fees.forEach((f) => mine.forEach((m) => {
-    if ((f.teamIds || []).length && !(f.teamIds || []).includes(m.playerTeamId)) return;
+    const ids = feeTeamIds(f);
+    if (ids.length && !ids.includes(m.playerTeamId)) return;
     rows.push({ f, m, paid: feePaid(f.id, m.id) });
   }));
   if (!rows.length) return "";
   const pending = rows.filter((r) => !r.paid);
   return `<div class="section-title">Club fees</div><div class="list">${rows.map((r) => `
     <div class="item"><div class="main"><div class="title">${esc(r.f.name)} <span class="badge ${r.paid ? "ok" : "warn"}">${r.paid ? "Paid" : "Pending"}</span></div>
-      <div class="small muted">${esc(fullName(r.m))} · ${esc(feeMoney(r.f))}${r.f.dueDate ? ` · due ${esc(fmtDay(r.f.dueDate, { day: "numeric", month: "short" }))}` : ""}</div></div></div>`).join("")}</div>
+      <div class="small muted">${esc(fullName(r.m))} · ${esc(feeMoney(r.f, r.m))}${r.f.dueDate ? ` · due ${esc(fmtDay(r.f.dueDate, { day: "numeric", month: "short" }))}` : ""}</div></div></div>`).join("")}</div>
     ${pending.length ? `<div class="small muted" style="margin-top:6px">Pay as the club tells you (MobilePay or transfer). An admin marks it as paid here.</div>` : ""}`;
 }
 function feeModal(f) {
   const season = activeSeason();
-  const teams = S.teams.filter((t) => !season || t.seasonId === season.id || (f?.teamIds || []).includes(t.id));
-  const all = f ? !(f.teamIds || []).length : true;
+  const current = feeTeamIds(f || {});
+  const teams = S.teams.filter((t) => !season || t.seasonId === season.id || current.includes(t.id));
   openModal({
     title: f ? "Edit fee" : "New fee",
     body: `<label class="f">Name<input type="text" name="name" value="${esc(f?.name || "")}" placeholder="Season fee 2026/27" required></label>
-      <div class="grid2"><label class="f">Amount<input type="number" name="amount" min="0" step="1" value="${esc(hasNum(f?.amount) ? f.amount : "")}" required></label>
-        <label class="f">Currency<input type="text" name="currency" value="${esc(f?.currency || "DKK")}" maxlength="4"></label></div>
-      <label class="f">Due date<input type="date" name="dueDate" value="${esc(f?.dueDate || "")}"></label>
-      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Who pays it</div>
-      <div class="card" style="padding:6px 12px">
-        <label class="check" style="padding:6px 0"><input type="checkbox" name="all" id="fee-all" ${all ? "checked" : ""}> All players in the club</label>
-        <div id="fee-teams" ${all ? "hidden" : ""}>${teams.map((t) => `<label class="check" style="padding:6px 0"><input type="checkbox" name="team_${t.id}" ${(f?.teamIds || []).includes(t.id) ? "checked" : ""}> ${esc(t.name)}</label>`).join("")}</div>
-      </div>`,
+      <div class="grid2"><label class="f">Currency<input type="text" name="currency" value="${esc(f?.currency || "DKK")}" maxlength="4"></label>
+        <label class="f">Due date<input type="date" name="dueDate" value="${esc(f?.dueDate || "")}"></label></div>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Amount per team</div>
+      <div class="card" style="padding:4px 12px">
+        ${teams.length ? teams.map((t) => `<div class="team-pick">
+          <label class="check"><input type="checkbox" name="team_${t.id}" ${current.includes(t.id) || (!f && false) ? "checked" : ""}> ${esc(t.name)}</label>
+          <input type="number" name="amt_${t.id}" min="0" step="1" placeholder="0" value="${esc(hasNum(f?.teamAmounts?.[t.id]) ? f.teamAmounts[t.id] : (current.includes(t.id) && hasNum(f?.amount) ? f.amount : ""))}"></div>`).join("")
+          : `<div class="muted small" style="padding:8px 0">Create a team first.</div>`}
+      </div>
+      <p class="small muted" style="margin:0">Tick each team that pays this fee and write its amount. Teams can pay different amounts.</p>`,
     danger: f ? `<button type="button" class="btn danger" data-act="fee-delete" data-id="${f.id}">Delete</button>` : "",
     onSubmit: async (d) => {
       if (!d.name?.trim()) throw new Error("Name is required.");
-      if (!hasNum(d.amount)) throw new Error("Enter the amount.");
-      const teamIds = d.all ? [] : teams.filter((t) => d[`team_${t.id}`]).map((t) => t.id);
-      if (!d.all && !teamIds.length) throw new Error("Choose at least one team.");
-      const data = { name: d.name.trim(), amount: Number(d.amount), currency: (d.currency || "DKK").trim().toUpperCase(),
+      const chosen = teams.filter((t) => d[`team_${t.id}`]);
+      if (!chosen.length) throw new Error("Tick at least one team.");
+      const teamAmounts = {};
+      chosen.forEach((t) => {
+        const raw = d[`amt_${t.id}`];
+        if (!hasNum(raw)) throw new Error(`Enter the amount for ${t.name}.`);
+        const n = Number(raw);
+        if (!(n >= 0)) throw new Error(`Amount for ${t.name} is not valid.`);
+        teamAmounts[t.id] = n;
+      });
+      const teamIds = chosen.map((t) => t.id);
+      const data = { name: d.name.trim(), teamAmounts, amount: teamAmounts[teamIds[0]], currency: (d.currency || "DKK").trim().toUpperCase(),
         dueDate: d.dueDate || "", teamIds, seasonId: season?.id || "", updatedAt: serverTimestamp() };
       const batch = writeBatch(db);
       const ref = f ? doc(db, "fees", f.id) : doc(collection(db, "fees"));
@@ -2824,29 +2998,32 @@ function feeModal(f) {
       toast("Fee saved");
     }
   });
-  $("#fee-all")?.addEventListener("change", (ev) => { const box = $("#fee-teams"); if (box) box.hidden = ev.target.checked; });
 }
 function viewFee(f) {
-  const members = feeMembers(f);
-  const paid = members.filter((m) => feePaid(f.id, m.id));
-  const total = members.length * Number(f.amount || 0);
-  const collected = paid.length * Number(f.amount || 0);
-  return `<button class="btn ghost sm" data-act="fee-back">‹ Fees</button>
+  const { members, total, collected, paid } = feeTotals(f);
+  const ids = feeTeamIds(f);
+  let html = `<button class="btn ghost sm" data-act="fee-back">‹ Fees</button>
     <div class="spread" style="margin-top:6px"><div><h2>${esc(f.name)}</h2>
-      <div class="muted small">${esc(feeMoney(f))}${f.dueDate ? ` · due ${esc(fmtDay(f.dueDate, { day: "numeric", month: "short", year: "numeric" }))}` : ""} · ${(f.teamIds || []).length ? esc((f.teamIds || []).map((t) => teamById(t)?.name).filter(Boolean).join(", ")) : "All players"}</div></div>
+      <div class="muted small">${esc(feeMoney(f))}${f.dueDate ? ` · due ${esc(fmtDay(f.dueDate, { day: "numeric", month: "short", year: "numeric" }))}` : ""}</div></div>
       <button class="btn sm" data-act="fee-edit" data-id="${f.id}">Edit</button></div>
     <div class="stats" style="margin-top:12px">
-      <div class="card stat"><div class="label">Paid</div><div class="big">${paid.length}/${members.length}</div></div>
+      <div class="card stat"><div class="label">Paid</div><div class="big">${paid}/${members.length}</div></div>
       <div class="card stat"><div class="label">Collected</div><div class="big">${collected}</div><div class="small muted">of ${total} ${esc(f.currency || "DKK")}</div></div>
-    </div>
-    <div class="section-title">Players</div>
-    ${members.length ? `<div class="list">${members.map((m) => {
+    </div>`;
+  const groups = ids.length ? ids : [...new Set(members.map((m) => m.playerTeamId))];
+  groups.forEach((tid) => {
+    const list = members.filter((m) => m.playerTeamId === tid);
+    const amount = Number(f.teamAmounts?.[tid] ?? f.amount ?? 0);
+    html += `<div class="section-title spread"><span>${esc(teamById(tid)?.name || "No team")}</span><span class="small muted">${amount} ${esc(f.currency || "DKK")} · ${list.filter((m) => feePaid(f.id, m.id)).length}/${list.length}</span></div>`;
+    html += list.length ? `<div class="list">${list.map((m) => {
       const p = paymentFor(f.id, m.id);
       const isPaid = p?.status === "paid";
       return `<div class="item"><div class="main"><div class="title">${esc(fullName(m))}</div>
-        <div class="small muted">${esc(teamById(m.playerTeamId)?.name || "No team")}${isPaid && p?.paidAt ? ` · paid ${esc(fmtDateTime(p.paidAt))}${p.markedByName ? ` by ${esc(p.markedByName)}` : ""}` : ""}</div></div>
+        <div class="small muted">${amount} ${esc(f.currency || "DKK")}${isPaid && p?.paidAt ? ` · paid ${esc(fmtDateTime(p.paidAt))}${p.markedByName ? ` by ${esc(p.markedByName)}` : ""}` : ""}</div></div>
         <button class="btn sm ${isPaid ? "" : "primary"}" data-act="fee-toggle" data-fee="${f.id}" data-member="${m.id}">${isPaid ? "Paid ✓" : "Mark paid"}</button></div>`;
-    }).join("")}</div>` : `<div class="card empty">No players in this group.</div>`}`;
+    }).join("")}</div>` : `<div class="card empty">No players in this team.</div>`;
+  });
+  return html;
 }
 
 Object.assign(ACTIONS, {
@@ -2901,7 +3078,7 @@ Object.assign(ACTIONS, {
     const now = feePaid(f.id, m.id);
     const batch = writeBatch(db);
     batch.set(doc(db, "feePayments", feeKey(f.id, m.id)), { feeId: f.id, memberId: m.id, teamId: m.playerTeamId || null,
-      status: now ? "pending" : "paid", amount: Number(f.amount || 0), paidAt: now ? null : serverTimestamp(),
+      status: now ? "pending" : "paid", amount: feeAmount(f, m), paidAt: now ? null : serverTimestamp(),
       markedBy: S.user.uid, markedByName: S.me.name || "", updatedAt: serverTimestamp() }, { merge: true });
     log(batch, now ? "Marked fee as pending" : "Marked fee as paid", { label: `${f.name} · ${fullName(m)}` });
     await batch.commit();
