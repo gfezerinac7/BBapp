@@ -169,6 +169,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .others summary{cursor:pointer;font-weight:600;color:var(--accent);padding:6px 0}
 .news.pinned{border-color:var(--accent)}
 .news-body{white-space:pre-wrap;margin-top:6px;font-size:14px}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+table.tbl{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+table.tbl th,table.tbl td{padding:8px 10px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
+table.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:var(--surface-2)}
+table.tbl th.l,table.tbl td.l{text-align:left}
+table.tbl tbody tr:last-child td{border-bottom:none}
+table.tbl tr.us{background:var(--accent-soft);font-weight:700}
+table.box input{width:58px;padding:6px;text-align:center;font-size:15px}
+table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--accent)}
 </style>
 </head>
 <body>
@@ -187,7 +196,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, onSnapshot, w
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.3";
+const VERSION = "v-0.8";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -214,7 +223,8 @@ const S = {
   myMember: null, memberSynced: true, busy: false,
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", eventId: null,
-  announcements: [],
+  announcements: [], tournaments: [], tournamentGames: [], gameStats: {}, referees: [], volunteers: [], fees: [], feePayments: [], myPayments: {},
+  statSettings: null, teamTab: "roster", tournamentId: null, statMode: "total", feeId: null,
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
   authMode: "login", joinInvite: null, showOldInvites: false,
   pendingInvite: normCode(new URLSearchParams(location.search).get("invite") || ""),
@@ -331,6 +341,10 @@ function coachLine(m) {
 /* =========================================================
    FIREBASE LISTENERS
    ========================================================= */
+onSnapshot(doc(db, "settings", "stats"),
+  (snap) => { S.statSettings = snap.exists() ? snap.data() : null; render(); },
+  (err) => console.warn("[stats settings]", err.code));
+
 onSnapshot(doc(db, "settings", "app"),
   (snap) => { S.settings = snap.exists() ? snap.data() : null; S.settingsLoaded = true; S.dbError = null; render(); },
   (err) => { S.dbError = err; S.settingsLoaded = true; render(); });
@@ -403,7 +417,7 @@ function syncDataSubs() {
   Object.values(dataSubs).forEach((u) => u && u());
   dataSubs = {};
   S.failedLists = [];
-  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; S.announcements = []; return; }
+  if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; S.announcements = []; S.tournaments = []; S.tournamentGames = []; S.gameStats = {}; S.referees = []; S.volunteers = []; S.fees = []; S.feePayments = []; S.myPayments = {}; return; }
   if (!isStaff()) { S.users = []; S.invites = []; }
   if (!isAdmin()) S.logs = [];
   // Each list retries on its own; a failing list never clears the others (no flicker).
@@ -439,6 +453,12 @@ function syncDataSubs() {
   listen("events", () => query(collection(db, "events"), where("date", ">=", isoDaysAgo(200))), (v) => (S.events = v));
   listen("unavailability", () => query(collection(db, "absences"), where("to", ">=", isoDaysAgo(200))), (v) => (S.absences = v));
   listen("announcements", () => query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(100)), (v) => (S.announcements = v));
+  listen("tournaments", () => collection(db, "tournaments"), (v) => (S.tournaments = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+  listen("tournament results", () => collection(db, "tournamentGames"), (v) => (S.tournamentGames = v));
+  listen("referees", () => collection(db, "referees"), (v) => (S.referees = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
+  listen("volunteers", () => collection(db, "volunteers"), (v) => (S.volunteers = v));
+  listen("fees", () => collection(db, "fees"), (v) => (S.fees = v.sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")))));
+  if (isStaff()) listen("fee payments", () => collection(db, "feePayments"), (v) => (S.feePayments = v));
   if (isStaff()) {
     listen("users", () => collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
     listen("invites", () => collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
@@ -511,6 +531,8 @@ function renderNow() {
     if (el && "value" in el) { el.value = v; el.dataset.dirty = "1"; }
   });
   syncAttendanceSubs();
+  syncStatsSubs();
+  loadMyPayments();
   if (focusId) {
     const el = document.getElementById(focusId);
     if (el) { el.focus(); if (caret !== null && el.setSelectionRange) { try { el.setSelectionRange(caret, caret); } catch (_) {} } }
@@ -678,6 +700,8 @@ function viewHome() {
   html += `</div>`;
   html += homeNewsSection();
   html += homeCalendarSection();
+  html += homeVolunteerSection();
+  html += homeFeeSection();
 
   if (mine) {
     html += `<div class="section-title">My profile</div><div class="list">${memberItem(mine)}</div>`;
@@ -724,30 +748,6 @@ function viewTeams() {
     ${teams.length ? `<div class="list">${teams.map(teamItem).join("")}</div>`
       : `<div class="card empty">${S.seasons.length ? "No teams in this season." : isAdmin() ? "Create a season first (Admin tab)." : "No teams yet."}</div>`}`;
 }
-function viewTeamDetail(t) {
-  const manage = canManageTeam(t.id);
-  const season = seasonById(t.seasonId);
-  const roster = rosterOf(t.id);
-  const coaches = coachesOf(t.id);
-  const invites = S.invites.filter((i) => i.teamId === t.id && inviteIsOpen(i));
-  let html = `<button class="btn ghost sm" data-act="team-back">‹ Teams</button>
-    <div class="spread" style="margin-top:6px"><div><h2>${esc(t.name)}</h2>
-      <div class="muted small">${[t.category, t.gender, season?.name].filter(Boolean).map(esc).join(" · ")}</div></div>
-      ${isAdmin() ? `<button class="btn sm" data-act="team-edit" data-id="${t.id}">Edit</button>` : ""}</div>
-
-    <div class="section-title spread"><span>Coaches (${coaches.length})</span>${isAdmin() ? `<button class="btn sm" data-act="coach-add" data-team="${t.id}">+ Add coach</button>` : ""}</div>
-    ${coaches.length ? `<div class="list">${coaches.map((m) => memberItem(m)).join("")}</div>` : `<div class="card empty">No coach assigned.</div>`}
-
-    <div class="section-title spread"><span>Roster (${roster.length})</span>${manage ? `<button class="btn primary sm" data-act="roster-add" data-team="${t.id}">+ Add player</button>` : ""}</div>
-    ${roster.length ? `<div class="list">${roster.map((m) => memberItem(m, { showNumberFor: t.id })).join("")}</div>` : `<div class="card empty">No players on this team yet.</div>`}`;
-  if (manage) {
-    html += `<div class="section-title">Open invites (${invites.length})</div>`;
-    html += invites.length ? inviteList(invites) : `<div class="card empty">No open invites. Open a player to invite them or their parents.</div>`;
-  }
-  if (isAdmin()) html += `<div style="margin-top:20px"><button class="btn danger block" data-act="team-delete" data-id="${t.id}">Delete team</button></div>`;
-  return html;
-}
-
 /* ---------- Members (staff) ---------- */
 function viewMembers() {
   const q = S.memberSearch.trim().toLowerCase();
@@ -769,6 +769,8 @@ function viewMembers() {
 
 /* ---------- Admin ---------- */
 function viewAdmin() {
+  if (S.feeId && feeById(S.feeId)) return viewFee(feeById(S.feeId));
+  S.feeId = null;
   const invites = S.invites.filter((i) => S.showOldInvites || inviteIsOpen(i));
   return `<h2>Admin</h2>
     <div class="section-title">Club</div>
@@ -782,6 +784,27 @@ function viewAdmin() {
         ${s.active ? "" : `<button class="btn sm" data-act="season-activate" data-id="${s.id}">Set active</button>`}
         <button class="btn sm" data-act="season-edit" data-id="${s.id}">Edit</button></div>`).join("")}</div>`
       : `<div class="card empty">No seasons yet.</div>`}
+
+    <div class="section-title spread"><span>Tournaments</span><button class="btn primary sm" data-act="tournament-new">+ New tournament</button></div>
+    ${S.tournaments.length ? `<div class="list">${S.tournaments.map((tr) => `<div class="item tap" data-act="tournament-edit" data-id="${tr.id}"><div class="main"><div class="title">${esc(tr.name)}</div>
+      <div class="small muted">${esc(teamById(tr.teamId)?.name || "?")} · ${plural((tr.entries || []).length, "team")}</div></div><span class="muted">›</span></div>`).join("")}</div>`
+      : `<div class="card empty">No tournaments yet. Create one to get the Standings table.</div>`}
+
+    <div class="section-title spread"><span>Club fees</span><button class="btn primary sm" data-act="fee-new">+ New fee</button></div>
+    ${S.fees.length ? `<div class="list">${S.fees.map((f) => {
+      const members = feeMembers(f); const paid = members.filter((m) => feePaid(f.id, m.id)).length;
+      return `<div class="item tap" data-act="fee-open" data-id="${f.id}"><div class="main"><div class="title">${esc(f.name)} <span class="badge ${paid === members.length && members.length ? "ok" : "warn"}">${paid}/${members.length} paid</span></div>
+        <div class="small muted">${esc(feeMoney(f))}${f.dueDate ? ` · due ${esc(fmtDay(f.dueDate, { day: "numeric", month: "short" }))}` : ""}</div></div><span class="muted">›</span></div>`;
+    }).join("")}</div>` : `<div class="card empty">No fees yet.</div>`}
+
+    <div class="section-title spread"><span>Referees</span><button class="btn primary sm" data-act="referee-new">+ New referee</button></div>
+    ${S.referees.length ? `<div class="list">${S.referees.map((r) => `<div class="item tap" data-act="referee-edit" data-id="${r.id}"><div class="main"><div class="title">${esc(r.name)} ${r.active === false ? `<span class="badge">Not available</span>` : ""}</div>
+      <div class="small muted">${[r.level, r.phone].filter(Boolean).map(esc).join(" · ") || "No details"}</div></div><span class="muted">›</span></div>`).join("")}</div>`
+      : `<div class="card empty">No referees yet.</div>`}
+
+    <div class="section-title spread"><span>Statistics</span><button class="btn sm" data-act="stats-settings">Edit</button></div>
+    <div class="card"><div class="row">${enabledStats().map((d) => `<span class="badge accent">${d.l}</span>`).join("")}</div>
+      <div class="small muted" style="margin-top:6px">Switched-on statistics appear in the box score of each game.</div></div>
 
     <div class="section-title spread"><span>Venues</span><button class="btn primary sm" data-act="venue-new">+ New venue</button></div>
     ${S.venues.length ? `<div class="list">${S.venues.map((v) => `<div class="item tap" data-act="venue-edit" data-id="${v.id}"><div class="main"><div class="title">${esc(v.name)} ${v.isHome ? `<span class="badge accent">Home</span>` : ""}</div><div class="small muted">${esc(v.address || "No address")}</div></div><span class="muted">›</span></div>`).join("")}</div>` : `<div class="card empty">No venues yet. Add your halls to pick them when creating events.</div>`}
@@ -1074,11 +1097,14 @@ function settingsModal() {
     title: "Club settings",
     body: `<label class="f">Club name<input type="text" name="clubName" value="${esc(clubName())}" required></label>
       <label class="f">App name<input type="text" name="appName" value="${esc(appName())}" required></label>
-      <p class="small muted" style="margin:0">Shown in the header, login screen and browser tab.</p>`,
+      <label class="f">Volunteer roles (one per line)<textarea name="volunteerRoles" rows="5">${esc(volunteerRoles().join("\n"))}</textarea></label>
+      <p class="small muted" style="margin:0">Club and app name are shown in the header and the login screen.</p>`,
     onSubmit: async (d) => {
       if (!d.clubName?.trim() || !d.appName?.trim()) throw new Error("Both names are required.");
       const batch = writeBatch(db);
-      batch.update(doc(db, "settings", "app"), { clubName: d.clubName.trim(), appName: d.appName.trim(), updatedAt: serverTimestamp() });
+      const vroles = String(d.volunteerRoles || "").split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 12);
+      batch.update(doc(db, "settings", "app"), { clubName: d.clubName.trim(), appName: d.appName.trim(),
+        volunteerRoles: vroles.length ? vroles : DEFAULT_VOLUNTEER_ROLES, updatedAt: serverTimestamp() });
       log(batch, "Changed club settings", { label: `${d.clubName.trim()} / ${d.appName.trim()}` });
       await batch.commit();
       toast("Settings saved");
@@ -1301,7 +1327,9 @@ const ACTIONS = {
   reload: () => location.reload(),
   "auth-mode": (el) => { S.authMode = el.dataset.mode; render(); },
   "join-reset": () => { S.joinInvite = null; S.pendingInvite = ""; render(); },
-  logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null }); await signOut(auth); },
+  logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null,
+    teamTab: "roster", tournamentId: null, feeId: null, myPayments: {} });
+  feeFetch = new Set(); await signOut(auth); },
   profile: () => profileModal(),
   redeem: () => redeemModal(),
   "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
@@ -1526,6 +1554,25 @@ function visibleEvents(scope) {
   return { upcoming, past };
 }
 
+/* ---------- game statistics listeners (open game / open team) ---------- */
+let statSubs = [], statSubKey = "";
+function syncStatsSubs() {
+  if (!isActive()) { statSubs.forEach((u) => u()); statSubs = []; statSubKey = ""; return; }
+  const e = S.eventId ? eventById(S.eventId) : null;
+  const teamStats = S.tab === "teams" && S.teamId && S.teamTab === "stats" ? S.teamId : "";
+  const key = `${e && e.type === "game" ? e.id : ""}|${teamStats}`;
+  if (key === statSubKey) return;
+  statSubKey = key;
+  statSubs.forEach((u) => u());
+  statSubs = [];
+  S.gameStats = {};
+  const add = (ref) => statSubs.push(onSnapshot(ref,
+    (snap) => { const next = { ...S.gameStats }; snap.docs.forEach((d) => (next[d.id] = { id: d.id, ...d.data() })); S.gameStats = next; render(); },
+    (err) => console.warn("[stats]", err.code, err.message)));
+  if (e && e.type === "game") add(query(collection(db, "gameStats"), where("eventId", "==", e.id)));
+  if (teamStats) add(query(collection(db, "gameStats"), where("teamId", "==", teamStats)));
+}
+
 /* ---------- attendance listeners: only for events on screen ---------- */
 let attSubs = [], attKeyStr = "", logSub = null, logKeyStr = "";
 function syncAttendanceSubs() {
@@ -1726,6 +1773,10 @@ function viewEventDetail(e) {
 
   }
 
+  if (e.type === "game" && hasStarted(e) && !cancelled && enabledStats().length) html += boxScoreSection(e, manage);
+  html += volunteerSection(e, manage);
+  html += refereeSection(e, manage);
+
   if (manage) {
     html += `<div class="section-title">Attendance log</div>`;
     html += S.eventLog.length ? `<div class="list">${S.eventLog.map((l) => {
@@ -1783,7 +1834,9 @@ function eventModal(e) {
         <label class="f">Type<select name="type" id="ev-type"><option value="practice" ${type === "practice" ? "selected" : ""}>Practice</option><option value="game" ${type === "game" ? "selected" : ""}>Game</option></select></label>
         <label class="f">Team<select name="teamId">${manageable.map((t) => `<option value="${t.id}" ${defTeam === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label></div>
       <div class="subsection" data-ev="game" ${type === "game" ? "" : "hidden"}>
-        <div class="grid2"><label class="f">Opponent<input type="text" name="opponent" value="${esc(e?.opponent || "")}"></label>
+        ${(() => { const trs = tournamentsFor(defTeam); return trs.length ? `<label class="f">Counts for<select name="tournamentId" id="ev-tournament"><option value="">No tournament</option>${trs.map((x) => `<option value="${x.id}" ${e?.tournamentId === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+        <label class="f">Opponent from the tournament<select name="opponentKey" id="ev-opp-key"><option value="">Type the name below</option>${trs.flatMap((x) => (x.entries || []).filter((en) => en.key !== US).map((en) => `<option value="${x.id}|${en.key}" ${e?.tournamentId === x.id && e?.opponentKey === en.key ? "selected" : ""}>${esc(en.name)}</option>`)).join("")}</select></label>` : ""; })()}
+        <div class="grid2"><label class="f">Opponent<input type="text" name="opponent" id="ev-opponent" value="${esc(e?.opponent || "")}"></label>
           <label class="f">Home / away<select name="homeAway"><option value="home" ${e?.homeAway !== "away" ? "selected" : ""}>Home</option><option value="away" ${e?.homeAway === "away" ? "selected" : ""}>Away</option></select></label></div>
         <label class="f">Meet time<input type="time" name="meetTime" value="${esc(e?.meetTime || "")}"></label>
       </div>
@@ -1812,7 +1865,13 @@ function eventModal(e) {
       if (d.type === "game" && !d.opponent?.trim()) throw new Error("Enter the opponent.");
       if (!d.venueId && !d.location?.trim()) throw new Error("Choose a venue or enter a location.");
       const closeHours = Number(d.closeHours) || 0;
+      let tournamentId = null, opponentKey = null;
+      if (d.type === "game" && d.opponentKey) {
+        const [tid, key] = String(d.opponentKey).split("|");
+        tournamentId = tid; opponentKey = key;
+      } else if (d.type === "game" && d.tournamentId) tournamentId = d.tournamentId;
       const base = {
+        tournamentId, opponentKey,
         type: d.type, teamId: d.teamId, seasonId: team?.seasonId || "", title: d.type === "practice" ? (d.title || "").trim() : "",
         opponent: d.type === "game" ? d.opponent.trim() : "", homeAway: d.type === "game" ? d.homeAway : "", meetTime: d.type === "game" ? (d.meetTime || "") : "",
         startTime: d.startTime, endTime: d.endTime || "", venueId: d.venueId || null, location: d.venueId ? "" : (d.location || "").trim(),
@@ -1868,6 +1927,11 @@ function eventModal(e) {
     if (!e && ev.target.value === "game" && homeVenue()) { $("#ev-venue").value = homeVenue().id; show("location", false); }
   });
   $("#ev-venue")?.addEventListener("change", (ev) => show("location", !ev.target.value));
+  $("#ev-opp-key")?.addEventListener("change", (ev) => {
+    const label = ev.target.selectedOptions[0]?.textContent || "";
+    const [tid] = String(ev.target.value || "").split("|");
+    if (ev.target.value) { $("#ev-opponent").value = label; const t = $("#ev-tournament"); if (t) t.value = tid; }
+  });
   $("#ev-repeat")?.addEventListener("change", (ev) => {
     show("repeat", ev.target.checked);
     if (ev.target.checked) {
@@ -2225,6 +2289,622 @@ Object.assign(ACTIONS, {
       await batch.commit();
       closeModal(); toast("Announcement deleted");
     });
+  }
+});
+
+/* =========================================================
+   TOURNAMENT & STANDINGS (v-0.4) + STATISTICS (v-0.5)
+   ========================================================= */
+const US = "us";
+const STAT_DEFS = [
+  { k: "pts", l: "PTS", n: "Points" },
+  { k: "pf", l: "PF", n: "Fouls" },
+  { k: "fg2m", l: "2P", n: "2-pointers made" },
+  { k: "fg3m", l: "3P", n: "3-pointers made" },
+  { k: "ftm", l: "FT", n: "Free throws made" },
+  { k: "reb", l: "REB", n: "Rebounds" },
+  { k: "ast", l: "AST", n: "Assists" },
+  { k: "stl", l: "STL", n: "Steals" },
+  { k: "blk", l: "BLK", n: "Blocks" },
+  { k: "tov", l: "TO", n: "Turnovers" },
+  { k: "min", l: "MIN", n: "Minutes" }
+];
+const statsOn = () => S.statSettings?.enabled || { pts: true, pf: true };
+const enabledStats = () => STAT_DEFS.filter((d) => statsOn()[d.k]);
+const autoPoints = () => ["fg2m", "fg3m", "ftm"].every((k) => statsOn()[k]);
+const statKey = (eid, mid) => `${eid}_${mid}`;
+const statsOf = (eid, mid) => S.gameStats[statKey(eid, mid)];
+
+const tournamentById = (id) => byId(S.tournaments, id);
+const tournamentsFor = (teamId) => S.tournaments.filter((x) => x.teamId === teamId);
+function entryName(tr, key) {
+  const e = (tr.entries || []).find((x) => x.key === key);
+  return e ? e.name : key === US ? teamById(tr.teamId)?.name || "Us" : "?";
+}
+function tournamentGames(tr) {
+  const list = S.tournamentGames.filter((g) => g.tournamentId === tr.id).map((g) => ({ ...g, fromEvent: false }));
+  S.events.filter((e) => e.tournamentId === tr.id && e.type === "game" && hasResult(e) && e.status !== "cancelled").forEach((e) => {
+    const away = e.homeAway === "away";
+    list.push({
+      id: `ev_${e.id}`, tournamentId: tr.id, date: e.date, fromEvent: true, eventId: e.id,
+      homeKey: away ? e.opponentKey || "?" : US, awayKey: away ? US : e.opponentKey || "?",
+      homeScore: away ? e.scoreAgainst : e.scoreFor, awayScore: away ? e.scoreFor : e.scoreAgainst
+    });
+  });
+  return list.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+}
+function standingsRows(tr) {
+  const rows = new Map();
+  (tr.entries || []).forEach((e) => rows.set(e.key, { key: e.key, name: e.name, isUs: e.key === US, gp: 0, w: 0, l: 0, pf: 0, pa: 0, pts: 0 }));
+  const win = Number(tr.pointsWin ?? 2), loss = Number(tr.pointsLoss ?? 1), noShow = Number(tr.pointsForfeit ?? 0);
+  tournamentGames(tr).forEach((g) => {
+    if (!hasNum(g.homeScore) || !hasNum(g.awayScore)) return;
+    const h = rows.get(g.homeKey), a = rows.get(g.awayKey);
+    if (!h || !a) return;
+    const hs = Number(g.homeScore), as = Number(g.awayScore);
+    h.gp++; a.gp++; h.pf += hs; h.pa += as; a.pf += as; a.pa += hs;
+    if (hs > as) { h.w++; a.l++; h.pts += win; a.pts += g.forfeitBy === g.awayKey ? noShow : loss; }
+    else if (as > hs) { a.w++; h.l++; a.pts += win; h.pts += g.forfeitBy === g.homeKey ? noShow : loss; }
+    else { h.pts += win; a.pts += win; } // a draw is not possible in basketball, but keep the data sane
+  });
+  return [...rows.values()].sort((x, y) => y.pts - x.pts || (y.pf - y.pa) - (x.pf - x.pa) || y.pf - x.pf || x.name.localeCompare(y.name));
+}
+
+/* ---------- team detail with sub-tabs ---------- */
+function viewTeamDetail(t) {
+  const manage = canManageTeam(t.id);
+  const season = seasonById(t.seasonId);
+  const tabs = [["roster", "Roster"], ["schedule", "Schedule"], ["standings", "Standings"], ["stats", "Stats"]];
+  const tab = tabs.some(([k]) => k === S.teamTab) ? S.teamTab : "roster";
+  let html = `<button class="btn ghost sm" data-act="team-back">‹ Teams</button>
+    <div class="spread" style="margin-top:6px"><div><h2>${esc(t.name)}</h2>
+      <div class="muted small">${[t.category, t.gender, season?.name].filter(Boolean).map(esc).join(" · ")}</div></div>
+      ${isAdmin() ? `<button class="btn sm" data-act="team-edit" data-id="${t.id}">Edit</button>` : ""}</div>
+    <div class="seg" style="margin:12px 0">${tabs.map(([k, l]) => `<button data-act="team-tab" data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+
+  if (tab === "roster") {
+    const roster = rosterOf(t.id), coaches = coachesOf(t.id);
+    const invites = S.invites.filter((i) => i.teamId === t.id && inviteIsOpen(i));
+    html += `<div class="section-title spread"><span>Coaches (${coaches.length})</span>${isAdmin() ? `<button class="btn sm" data-act="coach-add" data-team="${t.id}">+ Add coach</button>` : ""}</div>
+      ${coaches.length ? `<div class="list">${coaches.map((m) => memberItem(m)).join("")}</div>` : `<div class="card empty">No coach assigned.</div>`}
+      <div class="section-title spread"><span>Roster (${roster.length})</span>${manage ? `<button class="btn primary sm" data-act="roster-add" data-team="${t.id}">+ Add player</button>` : ""}</div>
+      ${roster.length ? `<div class="list">${roster.map((m) => memberItem(m, { showNumberFor: t.id })).join("")}</div>` : `<div class="card empty">No players on this team yet.</div>`}`;
+    if (manage) {
+      html += `<div class="section-title">Open invites (${invites.length})</div>`;
+      html += invites.length ? inviteList(invites) : `<div class="card empty">No open invites. Open a player to invite them or their parents.</div>`;
+    }
+    if (isAdmin()) html += `<div style="margin-top:20px"><button class="btn danger block" data-act="team-delete" data-id="${t.id}">Delete team</button></div>`;
+    return html;
+  }
+  if (tab === "schedule") {
+    const now = Date.now();
+    const evs = S.events.filter((e) => e.teamId === t.id);
+    const up = evs.filter((e) => eventEnd(e).getTime() >= now).sort((a, b) => eventStart(a) - eventStart(b));
+    const past = evs.filter((e) => eventEnd(e).getTime() < now).sort((a, b) => eventStart(b) - eventStart(a)).slice(0, 15);
+    html += `<div class="section-title spread"><span>Upcoming (${up.length})</span>${manage ? `<button class="btn primary sm" data-act="event-new">+ New event</button>` : ""}</div>`;
+    html += up.length ? `<div class="stack">${up.map((e) => eventCard(e, { showTeam: false })).join("")}</div>` : `<div class="card empty">No upcoming events.</div>`;
+    html += `<div class="section-title">Past</div>`;
+    html += past.length ? `<div class="stack">${past.map((e) => eventCard(e, { showTeam: false })).join("")}</div>` : `<div class="card empty">Nothing played yet.</div>`;
+    return html;
+  }
+  if (tab === "standings") return html + standingsView(t);
+  return html + teamStatsView(t);
+}
+
+function standingsView(t) {
+  const list = tournamentsFor(t.id);
+  if (!list.length) {
+    return `<div class="card empty">No tournament for this team yet.${isAdmin() ? " Create one in <b>Admin → Tournaments</b>." : ""}</div>`;
+  }
+  const tr = byId(list, S.tournamentId) || list[0];
+  S.tournamentId = tr.id;
+  const rows = standingsRows(tr);
+  const games = tournamentGames(tr);
+  const manage = canManageTeam(t.id);
+  let html = list.length > 1 ? `<select data-change="tournament" style="margin-bottom:12px">${list.map((x) => `<option value="${x.id}" ${x.id === tr.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : "";
+  html += `<div class="spread"><h3>${esc(tr.name)}</h3>${isAdmin() ? `<button class="btn sm" data-act="tournament-edit" data-id="${tr.id}">Edit</button>` : ""}</div>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>#</th><th class="l">Team</th><th>GP</th><th>W</th><th>L</th><th>PF</th><th>PA</th><th>+/-</th><th>PTS</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr class="${r.isUs ? "us" : ""}">
+        <td>${i + 1}</td><td class="l">${esc(r.name)}</td><td>${r.gp}</td><td>${r.w}</td><td>${r.l}</td>
+        <td>${r.pf}</td><td>${r.pa}</td><td>${r.pf - r.pa > 0 ? "+" : ""}${r.pf - r.pa}</td><td><b>${r.pts}</b></td></tr>`).join("")}</tbody>
+    </table></div>
+    <div class="small muted" style="margin-top:6px">${tr.pointsWin ?? 2} points per win · ${tr.pointsLoss ?? 1} per loss · ${tr.pointsForfeit ?? 0} for a no-show. Tie-break: point difference, then points scored.</div>
+
+    <div class="section-title spread"><span>Games (${games.length})</span>${manage ? `<button class="btn primary sm" data-act="tgame-new" data-id="${tr.id}">+ Add result</button>` : ""}</div>`;
+  html += games.length ? `<div class="list">${games.map((g) => `
+    <div class="item ${g.fromEvent ? "tap" : ""}" ${g.fromEvent ? `data-act="event-open" data-id="${g.eventId}"` : ""}>
+      <div class="main"><div class="title">${esc(entryName(tr, g.homeKey))} ${hasNum(g.homeScore) ? g.homeScore : "–"} – ${hasNum(g.awayScore) ? g.awayScore : "–"} ${esc(entryName(tr, g.awayKey))}</div>
+        <div class="small muted">${esc(g.date || "")}${g.fromEvent ? " · our game" : ""}</div></div>
+      ${manage && !g.fromEvent ? `<button class="btn sm" data-act="tgame-edit" data-id="${g.id}">Edit</button>` : ""}</div>`).join("")}</div>`
+    : `<div class="card empty">No results yet. Our games appear here automatically once the result is entered.</div>`;
+  if (manage) html += `<div class="notice" style="margin-top:12px">Add the results of the other teams' games too, otherwise the table is incomplete.</div>`;
+  return html;
+}
+
+function tournamentModal(tr) {
+  const teams = S.teams.filter((t) => isAdmin() || coachOf().includes(t.id));
+  if (!teams.length) { toast("Create a team first.", "error"); return; }
+  const entries = (tr?.entries || []).filter((e) => e.key !== US);
+  const rows = (list) => list.map((e, i) => `<div class="row" data-entry="${i}"><input type="text" name="entry_${i}" value="${esc(e.name)}" placeholder="Team name" style="flex:1"></div>`).join("");
+  openModal({
+    title: tr ? "Edit tournament" : "New tournament",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(tr?.name || "")}" placeholder="U16 League 2026/27" required></label>
+      <label class="f">Our team<select name="teamId">${teams.map((t) => `<option value="${t.id}" ${tr?.teamId === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Other teams in the tournament</div>
+      <div id="entry-list" class="stack" style="gap:8px">${rows(entries.length ? entries : [{ name: "" }, { name: "" }])}</div>
+      <button type="button" class="btn sm" data-act="entry-add">+ Add team</button>
+      <div class="grid2"><label class="f">Points per win<input type="number" name="pointsWin" min="0" max="5" value="${tr?.pointsWin ?? 2}"></label>
+        <label class="f">Points per loss<input type="number" name="pointsLoss" min="0" max="5" value="${tr?.pointsLoss ?? 1}"></label></div>`,
+    danger: tr ? `<button type="button" class="btn danger" data-act="tournament-delete" data-id="${tr.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      const names = Object.keys(d).filter((k) => k.startsWith("entry_")).map((k) => (d[k] || "").trim()).filter(Boolean);
+      if (!names.length) throw new Error("Add at least one other team.");
+      const old = tr?.entries || [];
+      const list = [{ key: US, name: teamById(d.teamId)?.name || "Us" }];
+      names.forEach((n, i) => {
+        const prev = old.find((e) => e.name === n && e.key !== US);
+        list.push({ key: prev?.key || `t${i}${Math.random().toString(36).slice(2, 6)}`, name: n });
+      });
+      const data = { name: d.name.trim(), teamId: d.teamId, seasonId: teamById(d.teamId)?.seasonId || "", entries: list,
+        pointsWin: Number(d.pointsWin) || 0, pointsLoss: Number(d.pointsLoss) || 0, pointsForfeit: 0, updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      const ref = tr ? doc(db, "tournaments", tr.id) : doc(collection(db, "tournaments"));
+      if (tr) batch.update(ref, data); else batch.set(ref, { ...data, createdBy: S.user.uid, createdAt: serverTimestamp() });
+      log(batch, tr ? "Edited tournament" : "Created tournament", { label: data.name });
+      await batch.commit();
+      S.tournamentId = ref.id;
+      toast("Tournament saved");
+    }
+  });
+}
+function tgameModal(tr, g) {
+  const opts = (sel) => (tr.entries || []).map((e) => `<option value="${e.key}" ${sel === e.key ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+  openModal({
+    title: g ? "Edit result" : "Add result",
+    body: `<label class="f">Date<input type="date" name="date" value="${esc(g?.date || todayISO())}"></label>
+      <div class="score-grid">
+        <label class="f">Home<select name="homeKey">${opts(g?.homeKey)}</select></label><span></span>
+        <label class="f">Away<select name="awayKey">${opts(g?.awayKey)}</select></label>
+      </div>
+      <div class="score-grid">
+        <label class="f">Home score<input type="number" name="homeScore" min="0" max="300" value="${esc(hasNum(g?.homeScore) ? g.homeScore : "")}"></label>
+        <span class="score-dash">–</span>
+        <label class="f">Away score<input type="number" name="awayScore" min="0" max="300" value="${esc(hasNum(g?.awayScore) ? g.awayScore : "")}"></label>
+      </div>
+      <p class="small muted" style="margin:0">For our own games, enter the result in the game itself — it lands here automatically.</p>`,
+    danger: g ? `<button type="button" class="btn danger" data-act="tgame-delete" data-id="${g.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (d.homeKey === d.awayKey) throw new Error("Choose two different teams.");
+      if (!hasNum(d.homeScore) || !hasNum(d.awayScore)) throw new Error("Enter both scores.");
+      const data = { tournamentId: tr.id, date: d.date || todayISO(), homeKey: d.homeKey, awayKey: d.awayKey,
+        homeScore: Number(d.homeScore), awayScore: Number(d.awayScore), updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      const ref = g ? doc(db, "tournamentGames", g.id) : doc(collection(db, "tournamentGames"));
+      if (g) batch.update(ref, data); else batch.set(ref, { ...data, createdBy: S.user.uid, createdAt: serverTimestamp() });
+      log(batch, "Saved tournament result", { label: `${entryName(tr, d.homeKey)} ${data.homeScore}–${data.awayScore} ${entryName(tr, d.awayKey)}` });
+      await batch.commit();
+      toast("Result saved");
+    }
+  });
+}
+
+/* ---------- statistics ---------- */
+function boxScoreSection(e, manage) {
+  const stats = enabledStats();
+  const auto = autoPoints();
+  const players = eventRoster(e);
+  if (!players.length) return "";
+  const rowStats = (m) => statsOf(e.id, m.id)?.stats || {};
+  let html = `<div class="section-title">Box score</div>`;
+  if (!manage) {
+    const any = players.some((m) => Object.values(rowStats(m)).some((v) => Number(v) > 0));
+    if (!any) return `${html}<div class="card empty">No statistics yet.</div>`;
+    html += `<div class="table-wrap"><table class="tbl"><thead><tr><th class="l">Player</th>${stats.map((s) => `<th>${s.l}</th>`).join("")}</tr></thead>
+      <tbody>${players.map((m) => { const st = rowStats(m); return `<tr><td class="l">${hasNum(m.number) ? `#${esc(m.number)} ` : ""}${esc(fullName(m))}</td>${stats.map((s) => `<td>${Number(st[s.k] || 0)}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div>`;
+    return html;
+  }
+  html += `<form data-form="boxscore" class="card stack"><input type="hidden" name="eventId" value="${e.id}">
+    <div class="table-wrap"><table class="tbl box"><thead><tr><th class="l">Player</th>${stats.map((s) => `<th title="${esc(s.n)}">${s.l}</th>`).join("")}</tr></thead>
+      <tbody>${players.map((m) => { const st = rowStats(m); return `<tr><td class="l">${hasNum(m.number) ? `#${esc(m.number)} ` : ""}${esc(fullName(m))}</td>
+        ${stats.map((s) => `<td>${s.k === "pts" && auto ? `<span class="calc" data-pts="${m.id}">${Number(st.pts || 0)}</span>`
+          : `<input type="number" inputmode="numeric" min="0" max="199" name="st_${m.id}_${s.k}" value="${hasNum(st[s.k]) ? Number(st[s.k]) : ""}" data-member="${m.id}" data-stat="${s.k}">`}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div>
+    <div class="spread"><span class="small muted">${auto ? "Points are calculated from 2P, 3P and FT." : "Only the statistics switched on in Admin are shown."}</span>
+      <button class="btn primary sm" type="submit">Save box score</button></div></form>`;
+  return html;
+}
+function teamStatsView(t) {
+  const stats = enabledStats();
+  const rows = rosterOf(t.id).map((m) => {
+    const list = Object.values(S.gameStats).filter((s) => s.memberId === m.id && s.teamId === t.id);
+    const totals = {}; stats.forEach((s) => (totals[s.k] = 0));
+    let gp = 0;
+    list.forEach((s) => {
+      const any = stats.some((d) => Number(s.stats?.[d.k] || 0) > 0);
+      if (any) gp++;
+      stats.forEach((d) => (totals[d.k] += Number(s.stats?.[d.k] || 0)));
+    });
+    return { m, gp, totals };
+  }).filter((r) => r.gp > 0 || rosterOf(t.id).length <= 30);
+  const avg = S.statMode === "avg";
+  const val = (r, k) => avg ? (r.gp ? (r.totals[k] / r.gp).toFixed(1) : "0.0") : r.totals[k];
+  const sorted = [...rows].sort((a, b) => (b.totals.pts || 0) - (a.totals.pts || 0));
+  const leader = sorted[0];
+  let html = `<div class="seg" style="margin-bottom:12px"><button data-act="stat-mode" data-mode="total" class="${avg ? "" : "on"}">Totals</button><button data-act="stat-mode" data-mode="avg" class="${avg ? "on" : ""}">Per game</button></div>`;
+  if (!sorted.length || !sorted.some((r) => r.gp)) {
+    return html + `<div class="card empty">No statistics yet. A coach enters them in the box score of each game.</div>`;
+  }
+  if (leader && leader.gp) html += `<div class="card stat" style="margin-bottom:12px"><div class="label">Top scorer</div><div class="big">${esc(fullName(leader.m))}</div>
+    <div class="small muted">${leader.totals.pts} points in ${plural(leader.gp, "game")} · ${(leader.totals.pts / leader.gp).toFixed(1)} per game</div></div>`;
+  html += `<div class="table-wrap"><table class="tbl"><thead><tr><th class="l">Player</th><th>GP</th>${stats.map((s) => `<th>${s.l}</th>`).join("")}</tr></thead>
+    <tbody>${sorted.map((r) => `<tr><td class="l">${hasNum(r.m.number) ? `#${esc(r.m.number)} ` : ""}${esc(fullName(r.m))}</td><td>${r.gp}</td>${stats.map((s) => `<td>${val(r, s.k)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return html;
+}
+function statSettingsModal() {
+  const on = statsOn();
+  openModal({
+    title: "Statistics",
+    body: `<p class="small muted" style="margin:0">Switch on only what you really track. You can add more later without losing anything.</p>
+      <div class="card" style="padding:6px 12px">${STAT_DEFS.map((d) => `<label class="check" style="padding:8px 0"><input type="checkbox" name="st_${d.k}" ${on[d.k] ? "checked" : ""}> <b style="min-width:42px;display:inline-block">${d.l}</b> ${d.n}</label>`).join("")}</div>
+      <p class="small muted" style="margin:0">With 2P, 3P and FT switched on, points are calculated automatically.</p>`,
+    onSubmit: async (d) => {
+      const enabled = {};
+      STAT_DEFS.forEach((x) => { if (d[`st_${x.k}`]) enabled[x.k] = true; });
+      if (!Object.keys(enabled).length) throw new Error("Keep at least one statistic on.");
+      const batch = writeBatch(db);
+      batch.set(doc(db, "settings", "stats"), { enabled, updatedAt: serverTimestamp(), updatedBy: S.user.uid }, { merge: true });
+      log(batch, "Changed statistics settings", { label: Object.keys(enabled).join(", ") });
+      await batch.commit();
+      toast("Statistics updated");
+    }
+  });
+}
+
+Object.assign(FORMS, {
+  async boxscore(d, form) {
+    const e = eventById(d.eventId);
+    if (!e || !canManageTeam(e.teamId)) throw new Error("You can't edit this box score.");
+    const auto = autoPoints();
+    const byMember = {};
+    form.querySelectorAll("input[data-member]").forEach((el) => {
+      const mid = el.dataset.member, k = el.dataset.stat;
+      byMember[mid] = byMember[mid] || {};
+      byMember[mid][k] = el.value === "" ? 0 : Number(el.value);
+    });
+    const batch = writeBatch(db);
+    let n = 0;
+    Object.entries(byMember).forEach(([mid, stats]) => {
+      if (auto) stats.pts = 2 * (stats.fg2m || 0) + 3 * (stats.fg3m || 0) + (stats.ftm || 0);
+      const before = statsOf(e.id, mid)?.stats || {};
+      const changed = Object.keys(stats).some((k) => Number(before[k] || 0) !== Number(stats[k] || 0));
+      if (!changed) return;
+      n++;
+      batch.set(doc(db, "gameStats", statKey(e.id, mid)), { eventId: e.id, memberId: mid, teamId: e.teamId, stats,
+        updatedBy: S.user.uid, updatedByName: S.me.name || "", updatedAt: serverTimestamp() }, { merge: true });
+    });
+    if (!n) { toast("Nothing changed."); return; }
+    log(batch, "Saved box score", { label: `${eventTitle(e)} · ${e.date} · ${plural(n, "player")}` });
+    await batch.commit();
+    toast(`Box score saved (${n})`);
+  }
+});
+
+Object.assign(ACTIONS, {
+  "team-tab": (el) => { S.teamTab = el.dataset.tab; render(); window.scrollTo(0, 0); },
+  "stat-mode": (el) => { S.statMode = el.dataset.mode; render(); },
+  "tournament-new": () => tournamentModal(null),
+  "tournament-edit": (el) => tournamentModal(tournamentById(el.dataset.id)),
+  "tournament-delete": (el) => {
+    const tr = tournamentById(el.dataset.id);
+    confirmRun(`Delete ${tr.name}? Its results are deleted too.`, async () => {
+      const batch = writeBatch(db);
+      S.tournamentGames.filter((g) => g.tournamentId === tr.id).forEach((g) => batch.delete(doc(db, "tournamentGames", g.id)));
+      S.events.filter((e) => e.tournamentId === tr.id).forEach((e) => batch.update(doc(db, "events", e.id), { tournamentId: null, opponentKey: null }));
+      batch.delete(doc(db, "tournaments", tr.id));
+      log(batch, "Deleted tournament", { label: tr.name });
+      await batch.commit();
+      closeModal(); toast("Tournament deleted");
+    });
+  },
+  "entry-add": () => {
+    const list = $("#entry-list");
+    const i = list.children.length;
+    const div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML = `<input type="text" name="entry_${i}" placeholder="Team name" style="flex:1">`;
+    list.appendChild(div);
+    div.querySelector("input").focus();
+  },
+  "tgame-new": (el) => tgameModal(tournamentById(el.dataset.id), null),
+  "tgame-edit": (el) => { const g = byId(S.tournamentGames, el.dataset.id); tgameModal(tournamentById(g.tournamentId), g); },
+  "tgame-delete": (el) => confirmRun("Delete this result?", async () => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "tournamentGames", el.dataset.id));
+    log(batch, "Deleted tournament result", { label: el.dataset.id });
+    await batch.commit();
+    closeModal(); toast("Result deleted");
+  }),
+  "stats-settings": () => statSettingsModal()
+});
+
+/* =========================================================
+   VOLUNTEERS (v-0.6) · REFEREES (v-0.7) · CLUB FEES (v-0.8)
+   ========================================================= */
+const DEFAULT_VOLUNTEER_ROLES = ["Scorer", "Clock", "24 seconds", "Speaker", "Cafeteria"];
+const volunteerRoles = () => (S.settings?.volunteerRoles?.length ? S.settings.volunteerRoles : DEFAULT_VOLUNTEER_ROLES);
+const isHomeGame = (e) => e.type === "game" && e.homeAway !== "away";
+const volunteersOf = (eid) => S.volunteers.filter((v) => v.eventId === eid);
+function volunteerNeeds(e) {
+  const needs = e.volunteerNeeds && Object.keys(e.volunteerNeeds).length ? e.volunteerNeeds : null;
+  if (needs) return needs;
+  const d = {}; volunteerRoles().forEach((r) => (d[r] = 1));
+  return d;
+}
+function openSpots(e) {
+  const needs = volunteerNeeds(e), taken = volunteersOf(e.id);
+  return Object.entries(needs).reduce((n, [role, count]) => n + Math.max(0, Number(count) - taken.filter((v) => v.role === role).length), 0);
+}
+function volunteerSection(e, manage) {
+  if (!isHomeGame(e) || e.status === "cancelled") return "";
+  const needs = volunteerNeeds(e);
+  const taken = volunteersOf(e.id);
+  const past = isPast(e);
+  let html = `<div class="section-title spread"><span>Volunteers (table officials)</span>${manage && !past ? `<button class="btn sm" data-act="vol-needs" data-id="${e.id}">Set needs</button>` : ""}</div>
+    <div class="list">${Object.entries(needs).filter(([, n]) => Number(n) > 0).map(([role, count]) => {
+      const list = taken.filter((v) => v.role === role);
+      const mine = list.find((v) => v.uid === S.user.uid);
+      const free = Math.max(0, Number(count) - list.length);
+      return `<div class="item"><div class="main">
+          <div class="title">${esc(role)} <span class="badge ${free ? "warn" : "ok"}">${list.length}/${count}</span></div>
+          <div class="small muted">${list.length ? list.map((v) => esc(v.name)).join(", ") : "Nobody signed up yet"}</div></div>
+        ${past ? "" : mine ? `<button class="btn sm danger" data-act="vol-leave" data-id="${mine.id}">Cancel</button>`
+          : free ? `<button class="btn sm primary" data-act="vol-join" data-event="${e.id}" data-role="${esc(role)}">I'll do it</button>` : ""}</div>`;
+    }).join("")}</div>`;
+  if (manage && taken.length && !past) {
+    html += `<div class="small muted" style="margin-top:6px">Tap a name to remove it:</div><div class="chips" style="margin-top:6px">${taken.map((v) => `<button class="chip as-btn" data-act="vol-remove" data-id="${v.id}">${esc(v.name)} ✕</button>`).join("")}</div>`;
+  }
+  return html;
+}
+function volunteerNeedsModal(e) {
+  const needs = volunteerNeeds(e);
+  openModal({
+    title: "Volunteers needed",
+    body: `<p class="small muted" style="margin:0">How many people do you need for this home game? 0 hides the role.</p>
+      ${volunteerRoles().map((r) => `<div class="team-pick"><span>${esc(r)}</span><input type="number" name="need_${r}" min="0" max="9" value="${Number(needs[r] || 0)}"></div>`).join("")}`,
+    onSubmit: async (d) => {
+      const out = {};
+      volunteerRoles().forEach((r) => { const n = Number(d[`need_${r}`] || 0); if (n > 0) out[r] = n; });
+      const batch = writeBatch(db);
+      batch.update(doc(db, "events", e.id), { volunteerNeeds: out, updatedAt: serverTimestamp() });
+      log(batch, "Set volunteer needs", { label: `${eventTitle(e)} · ${e.date}` });
+      await batch.commit();
+      toast("Saved");
+    }
+  });
+}
+function homeVolunteerSection() {
+  const now = Date.now();
+  const games = S.events.filter((e) => isHomeGame(e) && e.status !== "cancelled" && eventEnd(e).getTime() >= now
+    && (isMyEvent(e) || isStaff())).sort((a, b) => eventStart(a) - eventStart(b)).filter((e) => openSpots(e) > 0).slice(0, 3);
+  if (!games.length) return "";
+  return `<div class="section-title">Volunteers needed</div><div class="list">${games.map((e) => `
+    <div class="item tap" data-act="event-open" data-id="${e.id}"><div class="main">
+      <div class="title">${esc(eventTitle(e))}</div>
+      <div class="small muted">${esc(fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" }))} ${esc(e.startTime || "")} · ${esc(teamById(e.teamId)?.name || "")}</div>
+      <div class="small"><span class="badge warn">${plural(openSpots(e), "open spot")}</span></div></div><span class="muted">›</span></div>`).join("")}</div>`;
+}
+
+/* ---------- referees ---------- */
+const refereeById = (id) => byId(S.referees, id);
+function refereeSection(e, manage) {
+  if (e.type !== "game") return "";
+  const list = (e.refereeIds || []).map(refereeById).filter(Boolean);
+  if (!manage && !list.length) return "";
+  return `<div class="section-title spread"><span>Referees</span>${manage && !isPast(e) ? `<button class="btn sm" data-act="ref-assign" data-id="${e.id}">Assign</button>` : ""}</div>
+    ${list.length ? `<div class="list">${list.map((r) => `<div class="item"><div class="main"><div class="title">${esc(r.name)}</div>
+      <div class="small muted">${[r.level, manage ? r.phone : ""].filter(Boolean).map(esc).join(" · ")}</div></div></div>`).join("")}</div>`
+      : `<div class="card empty">No referee assigned.</div>`}`;
+}
+function refereeAssignModal(e) {
+  const active = S.referees.filter((r) => r.active !== false);
+  openModal({
+    title: "Assign referees",
+    body: active.length ? `<div class="card" style="padding:6px 12px">${active.map((r) => `<label class="check" style="padding:8px 0"><input type="checkbox" name="ref_${r.id}" ${(e.refereeIds || []).includes(r.id) ? "checked" : ""}> ${esc(r.name)} <span class="small muted">${esc(r.level || "")}</span></label>`).join("")}</div>`
+      : `<div class="card empty">No referees yet. Add them in <b>Admin → Referees</b>.</div>`,
+    submitLabel: "Save",
+    onSubmit: active.length ? async (d) => {
+      const ids = active.filter((r) => d[`ref_${r.id}`]).map((r) => r.id);
+      const batch = writeBatch(db);
+      batch.update(doc(db, "events", e.id), { refereeIds: ids, updatedAt: serverTimestamp() });
+      log(batch, "Assigned referees", { label: `${eventTitle(e)} · ${e.date} · ${ids.map((i) => refereeById(i)?.name).filter(Boolean).join(", ") || "none"}` });
+      await batch.commit();
+      toast("Referees saved");
+    } : null
+  });
+}
+function refereeModal(r) {
+  openModal({
+    title: r ? "Edit referee" : "New referee",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(r?.name || "")}" required></label>
+      <div class="grid2"><label class="f">Level<input type="text" name="level" value="${esc(r?.level || "")}" placeholder="Regional"></label>
+        <label class="f">Phone<input type="text" name="phone" inputmode="tel" value="${esc(r?.phone || "")}"></label></div>
+      <label class="check"><input type="checkbox" name="active" ${r?.active !== false ? "checked" : ""}> Available this season</label>
+      <label class="f">Notes<input type="text" name="notes" value="${esc(r?.notes || "")}"></label>`,
+    danger: r ? `<button type="button" class="btn danger" data-act="referee-delete" data-id="${r.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      const data = { name: d.name.trim(), level: (d.level || "").trim(), phone: (d.phone || "").trim(),
+        notes: (d.notes || "").trim(), active: !!d.active, updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      const ref = r ? doc(db, "referees", r.id) : doc(collection(db, "referees"));
+      if (r) batch.update(ref, data); else batch.set(ref, { ...data, createdAt: serverTimestamp() });
+      log(batch, r ? "Edited referee" : "Added referee", { label: data.name });
+      await batch.commit();
+      toast("Referee saved");
+    }
+  });
+}
+
+/* ---------- club fees ---------- */
+const feeById = (id) => byId(S.fees, id);
+const feeKey = (feeId, memberId) => `${feeId}_${memberId}`;
+function feeMembers(f) {
+  return sortMembers(S.members.filter((m) => roles(m).player && (!(f.teamIds || []).length || (f.teamIds || []).includes(m.playerTeamId))));
+}
+function paymentFor(feeId, memberId) {
+  const key = feeKey(feeId, memberId);
+  return byId(S.feePayments, key) || S.myPayments[key] || null;
+}
+const feePaid = (feeId, memberId) => paymentFor(feeId, memberId)?.status === "paid";
+function feeMoney(f) { return `${f.amount} ${f.currency || "DKK"}`; }
+
+// players and parents read only their own payment docs
+let feeFetch = new Set();
+async function loadMyPayments() {
+  if (isStaff() || !isActive()) return;
+  const mine = linkedMembers().filter((m) => roles(m).player);
+  for (const f of S.fees) {
+    for (const m of mine) {
+      if (!(f.teamIds || []).length || (f.teamIds || []).includes(m.playerTeamId)) {
+        const key = feeKey(f.id, m.id);
+        if (feeFetch.has(key)) continue;
+        feeFetch.add(key);
+        try {
+          const snap = await getDoc(doc(db, "feePayments", key));
+          if (snap.exists()) { S.myPayments[key] = { id: key, ...snap.data() }; render(); }
+        } catch (_) { /* not allowed / offline */ }
+      }
+    }
+  }
+}
+function homeFeeSection() {
+  const mine = linkedMembers().filter((m) => roles(m).player);
+  if (!mine.length || !S.fees.length) return "";
+  const rows = [];
+  S.fees.forEach((f) => mine.forEach((m) => {
+    if ((f.teamIds || []).length && !(f.teamIds || []).includes(m.playerTeamId)) return;
+    rows.push({ f, m, paid: feePaid(f.id, m.id) });
+  }));
+  if (!rows.length) return "";
+  const pending = rows.filter((r) => !r.paid);
+  return `<div class="section-title">Club fees</div><div class="list">${rows.map((r) => `
+    <div class="item"><div class="main"><div class="title">${esc(r.f.name)} <span class="badge ${r.paid ? "ok" : "warn"}">${r.paid ? "Paid" : "Pending"}</span></div>
+      <div class="small muted">${esc(fullName(r.m))} · ${esc(feeMoney(r.f))}${r.f.dueDate ? ` · due ${esc(fmtDay(r.f.dueDate, { day: "numeric", month: "short" }))}` : ""}</div></div></div>`).join("")}</div>
+    ${pending.length ? `<div class="small muted" style="margin-top:6px">Pay as the club tells you (MobilePay or transfer). An admin marks it as paid here.</div>` : ""}`;
+}
+function feeModal(f) {
+  const season = activeSeason();
+  const teams = S.teams.filter((t) => !season || t.seasonId === season.id || (f?.teamIds || []).includes(t.id));
+  const all = f ? !(f.teamIds || []).length : true;
+  openModal({
+    title: f ? "Edit fee" : "New fee",
+    body: `<label class="f">Name<input type="text" name="name" value="${esc(f?.name || "")}" placeholder="Season fee 2026/27" required></label>
+      <div class="grid2"><label class="f">Amount<input type="number" name="amount" min="0" step="1" value="${esc(hasNum(f?.amount) ? f.amount : "")}" required></label>
+        <label class="f">Currency<input type="text" name="currency" value="${esc(f?.currency || "DKK")}" maxlength="4"></label></div>
+      <label class="f">Due date<input type="date" name="dueDate" value="${esc(f?.dueDate || "")}"></label>
+      <div class="f" style="font-size:13px;color:var(--muted);font-weight:600">Who pays it</div>
+      <div class="card" style="padding:6px 12px">
+        <label class="check" style="padding:6px 0"><input type="checkbox" name="all" id="fee-all" ${all ? "checked" : ""}> All players in the club</label>
+        <div id="fee-teams" ${all ? "hidden" : ""}>${teams.map((t) => `<label class="check" style="padding:6px 0"><input type="checkbox" name="team_${t.id}" ${(f?.teamIds || []).includes(t.id) ? "checked" : ""}> ${esc(t.name)}</label>`).join("")}</div>
+      </div>`,
+    danger: f ? `<button type="button" class="btn danger" data-act="fee-delete" data-id="${f.id}">Delete</button>` : "",
+    onSubmit: async (d) => {
+      if (!d.name?.trim()) throw new Error("Name is required.");
+      if (!hasNum(d.amount)) throw new Error("Enter the amount.");
+      const teamIds = d.all ? [] : teams.filter((t) => d[`team_${t.id}`]).map((t) => t.id);
+      if (!d.all && !teamIds.length) throw new Error("Choose at least one team.");
+      const data = { name: d.name.trim(), amount: Number(d.amount), currency: (d.currency || "DKK").trim().toUpperCase(),
+        dueDate: d.dueDate || "", teamIds, seasonId: season?.id || "", updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      const ref = f ? doc(db, "fees", f.id) : doc(collection(db, "fees"));
+      if (f) batch.update(ref, data); else batch.set(ref, { ...data, createdBy: S.user.uid, createdAt: serverTimestamp() });
+      log(batch, f ? "Edited fee" : "Created fee", { label: `${data.name} · ${data.amount} ${data.currency}` });
+      await batch.commit();
+      toast("Fee saved");
+    }
+  });
+  $("#fee-all")?.addEventListener("change", (ev) => { const box = $("#fee-teams"); if (box) box.hidden = ev.target.checked; });
+}
+function viewFee(f) {
+  const members = feeMembers(f);
+  const paid = members.filter((m) => feePaid(f.id, m.id));
+  const total = members.length * Number(f.amount || 0);
+  const collected = paid.length * Number(f.amount || 0);
+  return `<button class="btn ghost sm" data-act="fee-back">‹ Fees</button>
+    <div class="spread" style="margin-top:6px"><div><h2>${esc(f.name)}</h2>
+      <div class="muted small">${esc(feeMoney(f))}${f.dueDate ? ` · due ${esc(fmtDay(f.dueDate, { day: "numeric", month: "short", year: "numeric" }))}` : ""} · ${(f.teamIds || []).length ? esc((f.teamIds || []).map((t) => teamById(t)?.name).filter(Boolean).join(", ")) : "All players"}</div></div>
+      <button class="btn sm" data-act="fee-edit" data-id="${f.id}">Edit</button></div>
+    <div class="stats" style="margin-top:12px">
+      <div class="card stat"><div class="label">Paid</div><div class="big">${paid.length}/${members.length}</div></div>
+      <div class="card stat"><div class="label">Collected</div><div class="big">${collected}</div><div class="small muted">of ${total} ${esc(f.currency || "DKK")}</div></div>
+    </div>
+    <div class="section-title">Players</div>
+    ${members.length ? `<div class="list">${members.map((m) => {
+      const p = paymentFor(f.id, m.id);
+      const isPaid = p?.status === "paid";
+      return `<div class="item"><div class="main"><div class="title">${esc(fullName(m))}</div>
+        <div class="small muted">${esc(teamById(m.playerTeamId)?.name || "No team")}${isPaid && p?.paidAt ? ` · paid ${esc(fmtDateTime(p.paidAt))}${p.markedByName ? ` by ${esc(p.markedByName)}` : ""}` : ""}</div></div>
+        <button class="btn sm ${isPaid ? "" : "primary"}" data-act="fee-toggle" data-fee="${f.id}" data-member="${m.id}">${isPaid ? "Paid ✓" : "Mark paid"}</button></div>`;
+    }).join("")}</div>` : `<div class="card empty">No players in this group.</div>`}`;
+}
+
+Object.assign(ACTIONS, {
+  /* volunteers */
+  "vol-needs": (el) => volunteerNeedsModal(eventById(el.dataset.id)),
+  "vol-join": async (el) => {
+    const e = eventById(el.dataset.event), role = el.dataset.role;
+    const batch = writeBatch(db);
+    batch.set(doc(collection(db, "volunteers")), { eventId: e.id, teamId: e.teamId, role, uid: S.user.uid,
+      name: S.me.name || "", createdAt: serverTimestamp() });
+    log(batch, "Signed up as volunteer", { label: `${role} · ${eventTitle(e)} · ${e.date}` });
+    await batch.commit();
+    toast(`You're on ${role}`);
+  },
+  "vol-leave": (el) => confirmRun("Cancel your volunteer slot?", async () => {
+    await deleteDoc(doc(db, "volunteers", el.dataset.id));
+    toast("Slot cancelled");
+  }),
+  "vol-remove": (el) => confirmRun("Remove this volunteer?", async () => {
+    await deleteDoc(doc(db, "volunteers", el.dataset.id));
+    toast("Removed");
+  }),
+  /* referees */
+  "ref-assign": (el) => refereeAssignModal(eventById(el.dataset.id)),
+  "referee-new": () => refereeModal(null),
+  "referee-edit": (el) => refereeModal(refereeById(el.dataset.id)),
+  "referee-delete": (el) => confirmRun("Delete this referee?", async () => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "referees", el.dataset.id));
+    log(batch, "Deleted referee", { label: refereeById(el.dataset.id)?.name || "" });
+    await batch.commit();
+    closeModal(); toast("Referee deleted");
+  }),
+  /* fees */
+  "fee-new": () => feeModal(null),
+  "fee-edit": (el) => feeModal(feeById(el.dataset.id)),
+  "fee-open": (el) => { S.feeId = el.dataset.id; render(); window.scrollTo(0, 0); },
+  "fee-back": () => { S.feeId = null; render(); },
+  "fee-delete": (el) => {
+    const f = feeById(el.dataset.id);
+    confirmRun(`Delete ${f.name}? Payment marks are deleted too.`, async () => {
+      const batch = writeBatch(db);
+      S.feePayments.filter((p) => p.feeId === f.id).forEach((p) => batch.delete(doc(db, "feePayments", p.id)));
+      batch.delete(doc(db, "fees", f.id));
+      log(batch, "Deleted fee", { label: f.name });
+      await batch.commit();
+      S.feeId = null; closeModal(); toast("Fee deleted");
+    });
+  },
+  "fee-toggle": async (el) => {
+    const f = feeById(el.dataset.fee), m = memberById(el.dataset.member);
+    const now = feePaid(f.id, m.id);
+    const batch = writeBatch(db);
+    batch.set(doc(db, "feePayments", feeKey(f.id, m.id)), { feeId: f.id, memberId: m.id, teamId: m.playerTeamId || null,
+      status: now ? "pending" : "paid", amount: Number(f.amount || 0), paidAt: now ? null : serverTimestamp(),
+      markedBy: S.user.uid, markedByName: S.me.name || "", updatedAt: serverTimestamp() }, { merge: true });
+    log(batch, now ? "Marked fee as pending" : "Marked fee as paid", { label: `${f.name} · ${fullName(m)}` });
+    await batch.commit();
   }
 });
 
