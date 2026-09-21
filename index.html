@@ -203,7 +203,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.9";
+const VERSION = "v-0.10";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -233,6 +233,7 @@ const S = {
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", calType: "all", weekStart: null, eventId: null,
   announcements: [], tournaments: [], tournamentGames: [], gameStats: {}, referees: [], volunteers: [], fees: [], feePayments: [], myPayments: {},
+  pubEvents: [], pubStandings: [], pubNews: [], pubTeams: [], pubSite: null, loaded: {}, pubStatus: null,
   statSettings: null, teamTab: "roster", tournamentId: null, statMode: "total", feeId: null,
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
   authMode: "login", joinInvite: null, showOldInvites: false,
@@ -427,6 +428,7 @@ function syncDataSubs() {
   Object.values(dataSubs).forEach((u) => u && u());
   dataSubs = {};
   S.failedLists = [];
+  S.loaded = {}; S.pubEvents = []; S.pubStandings = []; S.pubNews = []; S.pubTeams = []; S.pubSite = null; S.pubStatus = null;
   if (!isActive()) { S.seasons = []; S.teams = []; S.members = []; S.users = []; S.invites = []; S.logs = []; S.events = []; S.venues = []; S.absences = []; S.attendance = {}; S.announcements = []; S.tournaments = []; S.tournamentGames = []; S.gameStats = {}; S.referees = []; S.volunteers = []; S.fees = []; S.feePayments = []; S.myPayments = {}; return; }
   if (!isStaff()) { S.users = []; S.invites = []; }
   if (!isAdmin()) S.logs = [];
@@ -438,6 +440,8 @@ function syncDataSubs() {
         tries = 0;
         S.failedLists = (S.failedLists || []).filter((n) => n !== name);
         setter(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        if (!snap.metadata?.fromCache) S.loaded[name] = true;
+        schedulePublish();
         render();
       },
       (err) => {
@@ -472,6 +476,16 @@ function syncDataSubs() {
   if (isStaff()) {
     listen("users", () => collection(db, "users"), (v) => (S.users = v.sort((a, b) => (a.name || "").localeCompare(b.name || ""))));
     listen("invites", () => collection(db, "invites"), (v) => (S.invites = v.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt))));
+  }
+  // v-0.10: staff keep the public website copies (public_*) in sync
+  if (isStaff()) {
+    listen("public events", () => query(collection(db, "public_events"), where("date", ">=", isoDaysAgo(PUB_DAYS))), (v) => (S.pubEvents = v));
+    listen("public standings", () => collection(db, "public_standings"), (v) => (S.pubStandings = v));
+    listen("public news", () => collection(db, "public_news"), (v) => (S.pubNews = v));
+  }
+  if (isAdmin()) {
+    listen("public teams", () => collection(db, "public_teams"), (v) => (S.pubTeams = v));
+    listen("public site", () => collection(db, "public_site"), (v) => (S.pubSite = v.find((x) => x.id === "main") || null));
   }
   if (isAdmin()) listen("activity log", () => query(collection(db, "auditLog"), orderBy("at", "desc"), limit(50)), (v) => (S.logs = v));
 }
@@ -838,6 +852,7 @@ function viewAdmin() {
     <div class="section-title">Club</div>
     <div class="card spread"><div><div style="font-weight:600">${esc(clubName())}</div><div class="small muted">App name: ${esc(appName())}</div></div>
       <button class="btn sm" data-act="settings-edit">Edit</button></div>
+    ${websiteSection()}
 
     <div class="section-title spread"><span>Seasons</span><button class="btn primary sm" data-act="season-new">+ New season</button></div>
     ${S.seasons.length ? `<div class="list">${S.seasons.map((s) => `
@@ -2354,7 +2369,7 @@ function newsItem(a, full = false) {
     <div class="spread" style="align-items:flex-start"><div class="title" style="font-weight:700">${a.pinned ? "📌 " : ""}${esc(a.title)} ${isNew ? `<span class="badge accent">New</span>` : ""}</div>
       ${full && canEditNews(a) ? `<button class="btn sm" data-act="news-edit" data-id="${a.id}">Edit</button>` : ""}</div>
     <div class="news-body">${esc(body)}</div>
-    <div class="small muted" style="margin-top:6px">${esc(aud)} · ${esc(a.createdByName || "")} · ${esc(fmtDateTime(a.createdAt))}</div>
+    <div class="small muted" style="margin-top:6px">${esc(aud)} · ${esc(a.createdByName || "")} · ${esc(fmtDateTime(a.createdAt))}${a.public ? " · 🌐 Public" : ""}</div>
   </div>`;
 }
 function homeNewsSection() {
@@ -2386,13 +2401,15 @@ function newsModal(a) {
         ${isAdmin() ? `<label class="check" style="padding:6px 0"><input type="checkbox" name="club" id="news-club" ${club ? "checked" : ""}> Whole club</label>` : ""}
         <div id="news-teams" ${club && isAdmin() ? "hidden" : ""}>${teams.map((t) => `<label class="check" style="padding:6px 0"><input type="checkbox" name="team_${t.id}" ${(a?.teamIds || []).includes(t.id) || (!a && !isAdmin() && teams.length === 1) ? "checked" : ""}> ${esc(t.name)}</label>`).join("")}</div>
       </div>
-      <label class="check"><input type="checkbox" name="pinned" ${a?.pinned ? "checked" : ""}> Pin to the top</label>`,
+      <label class="check"><input type="checkbox" name="pinned" ${a?.pinned ? "checked" : ""}> Pin to the top</label>
+      <label class="check"><input type="checkbox" name="public" ${a?.public ? "checked" : ""}> Show on the public website</label>
+      <p class="small muted" style="margin:0">Public announcements can be read by anyone on the club website.</p>`,
     danger: a ? `<button type="button" class="btn danger" data-act="news-delete" data-id="${a.id}">Delete</button>` : "",
     onSubmit: async (d) => {
       if (!d.title?.trim()) throw new Error("Title is required.");
       const teamIds = isAdmin() && d.club ? [] : teams.filter((t) => d[`team_${t.id}`]).map((t) => t.id);
       if (!(isAdmin() && d.club) && !teamIds.length) throw new Error("Choose at least one team.");
-      const data = { title: d.title.trim(), body: (d.body || "").trim(), teamIds, pinned: !!d.pinned, updatedAt: serverTimestamp() };
+      const data = { title: d.title.trim(), body: (d.body || "").trim(), teamIds, pinned: !!d.pinned, public: !!d.public, updatedAt: serverTimestamp() };
       const batch = writeBatch(db);
       const ref = a ? doc(db, "announcements", a.id) : doc(collection(db, "announcements"));
       if (a) batch.update(ref, data);
@@ -3084,6 +3101,176 @@ Object.assign(ACTIONS, {
     await batch.commit();
   }
 });
+
+/* =========================================================
+   PUBLIC WEBSITE (v-0.10)
+   BBapp keeps a cleaned copy of public information in public_* collections.
+   web.html reads only those (no login). Nothing about members is ever copied.
+   ========================================================= */
+const PUB_DAYS = 200;
+const PUB_SITE_FIELDS = ["tagline", "about", "email", "phone", "address", "facebook", "instagram", "heroImage"];
+let pubTimer = null, pubRunning = false, pubAgain = false;
+function schedulePublish() {
+  if (!isStaff()) return;
+  clearTimeout(pubTimer);
+  pubTimer = setTimeout(publishSync, 1200);
+}
+function canon(v) {
+  if (Array.isArray(v)) return v.map(canon);
+  if (v && typeof v === "object") { const o = {}; Object.keys(v).sort().forEach((k) => (o[k] = canon(v[k]))); return o; }
+  return v === undefined ? null : v;
+}
+function sameData(cur, want) {
+  if (!cur) return false;
+  const { id, updatedAt, ...rest } = cur;
+  const pick = {};
+  Object.keys(want).forEach((k) => (pick[k] = rest[k]));
+  return JSON.stringify(canon(pick)) === JSON.stringify(canon(want)) && Object.keys(rest).every((k) => k in want);
+}
+const siteUrl = (file) => new URL(file, location.href).href;
+const currentSeasonId = () => activeSeason()?.id || "";
+
+function publicEventData(e) {
+  const t = teamById(e.teamId), v = venueById(e.venueId), game = e.type === "game";
+  return {
+    teamId: e.teamId || "", teamName: t?.name || "", category: t?.category || "", type: game ? "game" : "practice",
+    title: game ? "" : (e.title || ""), opponent: game ? (e.opponent || "") : "", homeAway: game ? (e.homeAway === "away" ? "away" : "home") : "",
+    date: e.date || "", startTime: e.startTime || "", endTime: e.endTime || "",
+    venueName: v ? (v.name || "") : (e.location || ""), venueAddress: v ? (v.address || "") : "",
+    status: e.status === "cancelled" ? "cancelled" : "scheduled",
+    scoreFor: game && hasResult(e) ? Number(e.scoreFor) : null, scoreAgainst: game && hasResult(e) ? Number(e.scoreAgainst) : null
+  };
+}
+function publicStandingData(tr) {
+  const t = teamById(tr.teamId);
+  const games = tournamentGames(tr).filter((g) => hasNum(g.homeScore) && hasNum(g.awayScore)).slice(0, 12)
+    .map((g) => ({ date: g.date || "", home: entryName(tr, g.homeKey), away: entryName(tr, g.awayKey), homeScore: Number(g.homeScore), awayScore: Number(g.awayScore) }));
+  return {
+    teamId: tr.teamId || "", teamName: t?.name || "", current: !!t && t.seasonId === currentSeasonId(), name: tr.name || "",
+    rows: standingsRows(tr).map((r) => ({ name: r.name, isUs: !!r.isUs, gp: r.gp, w: r.w, l: r.l, pf: r.pf, pa: r.pa, pts: r.pts })), games
+  };
+}
+function publicNewsData(a) {
+  const ids = a.teamIds || [];
+  return { title: a.title || "", body: a.body || "", pinned: !!a.pinned, teamIds: ids,
+    teamNames: ids.map((id) => teamById(id)?.name).filter(Boolean), createdAt: tsMillis(a.createdAt) };
+}
+function publicTeamData(t) {
+  return { name: t.name || "", category: t.category || "", gender: t.gender || "", current: t.seasonId === currentSeasonId() };
+}
+
+// Compare what should be public with what is public, and queue only the differences.
+function pubDiff(ops, coll, current, desired, mayDelete) {
+  const cur = new Map(current.map((x) => [x.id, x]));
+  desired.forEach((data, id) => { if (!sameData(cur.get(id), data)) ops.push(["set", coll, id, data]); });
+  current.forEach((x) => { if (!desired.has(x.id) && mayDelete(x)) ops.push(["delete", coll, x.id]); });
+}
+async function publishSync() {
+  if (!isStaff() || !S.user) return;
+  if (pubRunning) { pubAgain = true; return; }
+  const L = S.loaded, ops = [];
+  if (L.events && L.teams && L.venues && L["public events"]) {
+    const from = isoDaysAgo(PUB_DAYS - 2);
+    const want = new Map();
+    S.events.filter((e) => canManageTeam(e.teamId) && e.date >= from).forEach((e) => want.set(e.id, publicEventData(e)));
+    pubDiff(ops, "public_events", S.pubEvents.filter((x) => (x.date || "") >= from), want, (x) => canManageTeam(x.teamId));
+  }
+  if (L.tournaments && L["tournament results"] && L.events && L.teams && L.seasons && L["public standings"]) {
+    const want = new Map();
+    S.tournaments.filter((tr) => canManageTeam(tr.teamId)).forEach((tr) => want.set(tr.id, publicStandingData(tr)));
+    pubDiff(ops, "public_standings", S.pubStandings, want, (x) => canManageTeam(x.teamId));
+  }
+  if (L.announcements && L.teams && L["public news"]) {
+    const list = S.announcements;
+    const oldest = list.length >= 100 ? Math.min(...list.map((a) => tsMillis(a.createdAt) || Infinity)) : 0;
+    const want = new Map();
+    list.filter((a) => a.public === true && tsMillis(a.createdAt) > 0 && canEditNews(a)).forEach((a) => want.set(a.id, publicNewsData(a)));
+    pubDiff(ops, "public_news", S.pubNews, want,
+      (x) => (x.createdAt || 0) >= oldest && (isAdmin() || ((x.teamIds || []).length > 0 && (x.teamIds || []).every((t) => coachOf().includes(t)))));
+  }
+  if (isAdmin() && L.teams && L.seasons && L["public teams"]) {
+    const want = new Map();
+    S.teams.forEach((t) => want.set(t.id, publicTeamData(t)));
+    pubDiff(ops, "public_teams", S.pubTeams, want, () => true);
+  }
+  if (isAdmin() && L["public site"] && S.settings) {
+    const cur = S.pubSite || {};
+    const want = { clubName: clubName(), appName: appName(), appUrl: siteUrl("./") };
+    PUB_SITE_FIELDS.forEach((k) => (want[k] = cur[k] ?? ""));
+    want.sponsors = cur.sponsors || [];
+    if (!S.pubSite || !sameData(S.pubSite, want)) ops.push(["set", "public_site", "main", want]);
+  }
+  if (!ops.length) { if (S.pubStatus?.state !== "ok") { S.pubStatus = { state: "ok", at: Date.now(), n: 0 }; render(); } return; }
+  pubRunning = true;
+  try {
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach(([kind, coll, id, data]) => {
+        if (kind === "set") batch.set(doc(db, coll, id), { ...data, updatedAt: serverTimestamp() });
+        else batch.delete(doc(db, coll, id));
+      });
+      await batch.commit();
+    }
+    S.pubStatus = { state: "ok", at: Date.now(), n: ops.length };
+  } catch (err) {
+    console.warn("[public website sync]", err.code, err.message);
+    S.pubStatus = { state: "error", at: Date.now(), msg: errMsg(err) };
+  } finally {
+    pubRunning = false;
+    render();
+    if (pubAgain) { pubAgain = false; schedulePublish(); }
+  }
+}
+
+function websiteSection() {
+  const st = S.pubStatus;
+  const status = !S.loaded["public site"] && (S.failedLists || []).some((n) => n.startsWith("public"))
+    ? `<span class="badge bad">Rules missing</span>`
+    : st?.state === "error" ? `<span class="badge bad">Sync failed</span>`
+    : st?.state === "ok" ? `<span class="badge ok">Up to date</span>` : `<span class="badge">Checking…</span>`;
+  const site = S.pubSite || {};
+  return `<div class="section-title spread"><span>Public website</span><button class="btn sm" data-act="website-edit">Edit texts</button></div>
+    <div class="card stack" style="gap:8px">
+      <div class="spread"><div style="font-weight:600">Club website ${status}</div>
+        <a class="btn sm" href="${esc(siteUrl("web.html"))}" target="_blank" rel="noopener">Open ›</a></div>
+      <div class="small muted" style="word-break:break-all">${esc(siteUrl("web.html"))}</div>
+      ${st?.state === "error" ? `<div class="small" style="color:var(--bad)">${esc(st.msg)}</div>` : ""}
+      <div class="small muted">Shows practices, games, results and standings, plus announcements marked <b>Show on the public website</b>. Member names, attendance, stats and fees are never published. It updates automatically when a coach or admin has the app open.</div>
+      <div class="small muted">${site.tagline ? `Tagline: ${esc(site.tagline)} · ` : ""}${plural((site.sponsors || []).length, "sponsor")}</div>
+    </div>`;
+}
+function websiteModal() {
+  const s = S.pubSite || {};
+  const sponsors = (s.sponsors || []).map((x) => [x.name, x.url, x.logo].filter((v, i) => v || i === 0).join(" | ")).join("\n");
+  openModal({
+    title: "Public website",
+    body: `<label class="f">Tagline<input type="text" name="tagline" maxlength="140" value="${esc(s.tagline || "")}" placeholder="We bring people together through basketball."></label>
+      <label class="f">About the club<textarea name="about" rows="5" maxlength="3000">${esc(s.about || "")}</textarea></label>
+      <div class="grid2"><label class="f">Contact email<input type="email" name="email" value="${esc(s.email || "")}"></label>
+        <label class="f">Phone<input type="tel" name="phone" value="${esc(s.phone || "")}"></label></div>
+      <label class="f">Address<input type="text" name="address" value="${esc(s.address || "")}"></label>
+      <div class="grid2"><label class="f">Facebook link<input type="url" name="facebook" value="${esc(s.facebook || "")}" placeholder="https://facebook.com/…"></label>
+        <label class="f">Instagram link<input type="url" name="instagram" value="${esc(s.instagram || "")}" placeholder="https://instagram.com/…"></label></div>
+      <label class="f">Header photo (image link, optional)<input type="url" name="heroImage" value="${esc(s.heroImage || "")}" placeholder="https://…/team.jpg"></label>
+      <label class="f">Sponsors (one per line: Name | website | logo link)<textarea name="sponsors" rows="4" placeholder="Vestjysk Bank | https://www.vestjyskbank.dk | https://…/logo.png">${esc(sponsors)}</textarea></label>
+      <p class="small muted" style="margin:0">Everything on this form is public. Don't add private phone numbers or addresses.</p>`,
+    onSubmit: async (d) => {
+      const url = (v) => { v = String(v || "").trim(); if (v && !/^https:\/\//i.test(v)) throw new Error(`Links must start with https:// (${v.slice(0, 40)})`); return v; };
+      const sponsors = String(d.sponsors || "").split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((p) => p[0])
+        .slice(0, 30).map(([name, link, logo]) => ({ name: name.slice(0, 80), url: url(link), logo: url(logo) }));
+      const data = { clubName: clubName(), appName: appName(), appUrl: siteUrl("./"),
+        tagline: (d.tagline || "").trim(), about: (d.about || "").trim(), email: (d.email || "").trim(), phone: (d.phone || "").trim(),
+        address: (d.address || "").trim(), facebook: url(d.facebook), instagram: url(d.instagram), heroImage: url(d.heroImage),
+        sponsors, updatedAt: serverTimestamp() };
+      const batch = writeBatch(db);
+      batch.set(doc(db, "public_site", "main"), data);
+      log(batch, "Edited public website", { label: data.tagline || clubName() });
+      await batch.commit();
+      toast("Website saved");
+    }
+  });
+}
+Object.assign(ACTIONS, { "website-edit": () => websiteModal() });
 
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act]");
