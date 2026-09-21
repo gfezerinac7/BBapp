@@ -194,6 +194,27 @@ table.box input{width:58px;padding:6px;text-align:center;font-size:15px}
 table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--accent)}
 .weeknav{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 8px}
 .weeknav .wk{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px}
+
+/* playbook (v-0.12) */
+.court-wrap{max-width:560px;margin:0 auto}
+.court{display:block;width:100%;height:auto;border-radius:12px;box-shadow:var(--shadow);touch-action:none;user-select:none;-webkit-user-select:none}
+.court.editing .tok{cursor:grab}
+.court[data-side="offense"] .side-d,.court[data-side="defense"] .side-o{display:none}
+.court .mv-o,.court .mv-d,.court .mv-b{stroke-width:.9;stroke-dasharray:2.4 1.6;fill:none}
+.court .mv-o{stroke:var(--accent)} .court .mv-d{stroke:#c92a2a} .court .mv-b{stroke:#e8590c;stroke-dasharray:1 1.6}
+.play-ctrl{display:flex;align-items:center;gap:8px;margin:12px 0 6px}
+.iconbtn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:16px;display:grid;place-items:center;cursor:pointer;color:var(--text)}
+.dots{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.dot{width:12px;height:12px;border-radius:50%;border:none;background:var(--line);padding:0;cursor:pointer}
+.dot.on{background:var(--accent)}
+.steps-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.stepbtn{min-width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700;cursor:pointer;color:var(--text)}
+.stepbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.play-thumb{width:64px;height:60px;flex:none;border-radius:8px}
+button.chip{border:none;cursor:pointer;font:inherit;font-size:13px}
+button.chip.on{background:var(--accent);color:#fff}
+.video{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000}
+.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 </style>
 </head>
 <body>
@@ -213,7 +234,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.11";
+const VERSION = "v-0.12";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -243,6 +264,7 @@ const S = {
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", calType: "all", weekStart: null, eventId: null,
   announcements: [], tournaments: [], tournamentGames: [], gameStats: {}, referees: [], volunteers: [], fees: [], feePayments: [], myPayments: {},
+  plays: [], playsLoaded: false, playsDenied: false, playView: null, playEdit: null, playEditHidden: null, playCat: "all",
   logo: null, logoIcon: null, logoOnDark: false,
   pubEvents: [], pubStandings: [], pubNews: [], pubTeams: [], pubSite: null, loaded: {}, pubStatus: null,
   statSettings: null, teamTab: "roster", tournamentId: null, statMode: "total", feeId: null,
@@ -253,6 +275,7 @@ const S = {
 };
 if (S.pendingInvite) S.authMode = "join";
 
+let drag = null;   // playbook editor: token being dragged
 let meUnsub = null, memberUnsub = null, memberListenId = null, memberRetries = 0;
 let dataSubs = {}, dataKey = "";
 
@@ -602,6 +625,7 @@ function render() {
   requestAnimationFrame(() => { renderQueued = false; renderNow(); });
 }
 function renderNow() {
+  if (drag) return;   // never rebuild the court while a player is being dragged
   document.title = appName();
   const root = $("#app");
   const active = document.activeElement;
@@ -628,6 +652,7 @@ function renderNow() {
   });
   syncAttendanceSubs();
   syncStatsSubs();
+  syncPlaySubs();
   loadMyPayments();
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -1454,14 +1479,14 @@ const ACTIONS = {
   reload: () => location.reload(),
   "auth-mode": (el) => { S.authMode = el.dataset.mode; render(); },
   "join-reset": () => { S.joinInvite = null; S.pendingInvite = ""; render(); },
-  logout: async () => { closeModal(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null,
+  logout: async () => { closeModal(); resetPlays(); Object.assign(S, { tab: "home", teamId: null, eventId: null, calTeam: "mine", seasonFilter: null, authMode: "login", joinInvite: null,
     teamTab: "roster", tournamentId: null, feeId: null, myPayments: {}, calType: "all", weekStart: null });
   feeFetch = new Set(); await signOut(auth); },
   profile: () => profileModal(),
   redeem: () => redeemModal(),
   "push-enable": () => enablePush(false),
   "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
-  tab: (el) => { S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
+  tab: (el) => { resetPlays(); S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
   "modal-close": () => closeModal(),
   "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
   "member-scope": (el) => { S.memberScope = el.dataset.scope; render(); },
@@ -1490,7 +1515,7 @@ const ACTIONS = {
   "team-new": () => teamModal(null),
   "team-edit": (el) => teamModal(teamById(el.dataset.id)),
   "team-open": (el) => { S.tab = "teams"; S.teamId = el.dataset.id; render(); window.scrollTo(0, 0); },
-  "team-back": () => { S.teamId = null; render(); },
+  "team-back": () => { S.teamId = null; resetPlays(); render(); },
   "team-delete": (el) => {
     const t = teamById(el.dataset.id);
     confirmRun(`Delete ${t.name}? Its players and coaches stay in the club without this team.`, async () => {
@@ -2550,7 +2575,7 @@ function standingsRows(tr) {
 function viewTeamDetail(t) {
   const manage = canManageTeam(t.id);
   const season = seasonById(t.seasonId);
-  const tabs = [["roster", "Roster"], ["schedule", "Schedule"], ["standings", "Standings"], ["stats", "Stats"]];
+  const tabs = [["roster", "Roster"], ["schedule", "Schedule"], ["plays", "Plays"], ["standings", "Standings"], ["stats", "Stats"]];
   const tab = tabs.some(([k]) => k === S.teamTab) ? S.teamTab : "roster";
   let html = `<button class="btn ghost sm" data-act="team-back">‹ Teams</button>
     <div class="spread" style="margin-top:6px"><div><h2>${esc(t.name)}</h2>
@@ -2583,6 +2608,7 @@ function viewTeamDetail(t) {
     html += past.length ? `<div class="stack">${past.map((e) => eventCard(e, { showTeam: false })).join("")}</div>` : `<div class="card empty">Nothing played yet.</div>`;
     return html;
   }
+  if (tab === "plays") return html + playsView(t);
   if (tab === "standings") return html + standingsView(t);
   return html + teamStatsView(t);
 }
@@ -2788,7 +2814,7 @@ Object.assign(FORMS, {
 });
 
 Object.assign(ACTIONS, {
-  "team-tab": (el) => { S.teamTab = el.dataset.tab; render(); window.scrollTo(0, 0); },
+  "team-tab": (el) => { S.teamTab = el.dataset.tab; resetPlays(); render(); window.scrollTo(0, 0); },
   "stat-mode": (el) => { S.statMode = el.dataset.mode; render(); },
   "tournament-new": () => tournamentModal(null),
   "tournament-edit": (el) => tournamentModal(tournamentById(el.dataset.id)),
@@ -3136,6 +3162,387 @@ Object.assign(ACTIONS, {
     log(batch, now ? "Marked fee as pending" : "Marked fee as paid", { label: `${f.name} · ${fullName(m)}` });
     await batch.commit();
   }
+});
+
+/* =========================================================
+   PLAYBOOK (v-0.12)
+   Coaches draw plays step by step on a half court (5 attackers, 5 defenders,
+   ball). Everyone on the team can watch them animated and choose to see
+   offense, defense or both. Stored in plays/{id}.
+   Court units: 1 = 10 cm. viewBox 0 0 150 140, basket at the top.
+   ========================================================= */
+const PLAY_CATEGORIES = ["Half-court offense", "Sideline out of bounds", "Baseline out of bounds", "Man-to-man defense",
+  "Zone defense", "Press / press break", "Fast break", "Drill", "Other"];
+const BASKET = { x: 75, y: 15.75 };
+const TOK_R = 5.4;
+const clampPos = (p) => ({ x: Math.round(Math.min(146, Math.max(4, p.x)) * 10) / 10, y: Math.round(Math.min(136, Math.max(4, p.y)) * 10) / 10 });
+const lerp = (a, b, t) => a + (b - a) * t;
+const lerpP = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+function defaultStep() {
+  const o = [{ x: 75, y: 96 }, { x: 22, y: 72 }, { x: 128, y: 72 }, { x: 52, y: 42 }, { x: 98, y: 42 }];
+  const d = o.map((p) => clampPos(lerpP(p, BASKET, 0.22)));
+  return { o, d, ball: 0, note: "" };
+}
+const copyStep = (s) => ({ o: s.o.map((p) => ({ ...p })), d: s.d.map((p) => ({ ...p })), ball: s.ball ?? -1, note: "" });
+
+function courtLines() {
+  const L = 'stroke="#8a6a3d" stroke-opacity=".75" stroke-width=".7" fill="none"';
+  return `<rect x="0" y="0" width="150" height="140" fill="#f3e3c4"/>
+    <rect x="50.5" y="0" width="49" height="58" fill="var(--accent)" fill-opacity=".13"/>
+    <g ${L}>
+      <rect x=".5" y=".5" width="149" height="139"/>
+      <rect x="50.5" y="0" width="49" height="58"/>
+      <path d="M57 58 A18 18 0 0 0 93 58"/>
+      <path d="M57 58 A18 18 0 0 1 93 58" stroke-dasharray="2.2 2"/>
+      <path d="M9 0 L9 29.9 A67.5 67.5 0 0 0 141 29.9 L141 0"/>
+      <path d="M62.5 15.75 A12.5 12.5 0 0 0 87.5 15.75"/>
+      <path d="M57 140 A18 18 0 0 1 93 140"/>
+      <line x1="66" y1="12" x2="84" y2="12" stroke-width="1.2" stroke-opacity="1"/>
+    </g>
+    <circle cx="75" cy="15.75" r="2.3" fill="none" stroke="#e8590c" stroke-width=".9"/>`;
+}
+const arrowDefs = `<defs>
+  <marker id="ah-o" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker>
+  <marker id="ah-d" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c92a2a"/></marker>
+  <marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e8590c"/></marker></defs>`;
+function tokenSvg(kind, i, p, extra = "") {
+  const off = kind === "o";
+  return `<g class="tok tok-${kind}" data-tok="${kind}${i}" id="${extra}${kind}${i}" transform="translate(${p.x} ${p.y})">
+    <circle r="${TOK_R}" fill="${off ? "var(--accent)" : "#fff"}" stroke="${off ? "#fff" : "#c92a2a"}" stroke-width="${off ? 0.9 : 1.3}"/>
+    <text y="2.3" text-anchor="middle" font-size="6.4" font-weight="800" fill="${off ? "#fff" : "#c92a2a"}" font-family="inherit">${off ? i + 1 : `X${i + 1}`}</text></g>`;
+}
+const ballAt = (p) => ({ x: p.x + 4.3, y: p.y - 4.3 });
+function ballSvg(p, id) {
+  return `<g id="${id}" transform="translate(${p.x} ${p.y})" style="pointer-events:none"><circle r="2.7" fill="#e8590c" stroke="#7a2e05" stroke-width=".5"/>
+    <path d="M-2.7 0H2.7M0 -2.7V2.7" stroke="#7a2e05" stroke-width=".35"/></g>`;
+}
+// dashed arrows from step a to step b (movement + pass)
+function pathsSvg(a, b, side) {
+  if (!a || !b) return "";
+  let out = "";
+  const line = (p, q, cls, marker) => {
+    const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy);
+    if (len < 2.5) return "";
+    const k = (len - TOK_R - 0.8) / len;           // stop at the token edge
+    return `<line x1="${p.x}" y1="${p.y}" x2="${p.x + dx * k}" y2="${p.y + dy * k}" class="${cls}" marker-end="url(#${marker})"/>`;
+  };
+  if (side !== "defense") a.o.forEach((p, i) => (out += line(p, b.o[i], "mv-o", "ah-o")));
+  if (side !== "offense") a.d.forEach((p, i) => (out += line(p, b.d[i], "mv-d", "ah-d")));
+  if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) out += line(b.o[a.ball], b.o[b.ball], "mv-b", "ah-b");
+  return out;
+}
+function videoEmbed(url) {
+  url = String(url || "").trim();
+  if (!/^https:\/\//i.test(url)) return "";
+  let m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/i);
+  if (m) return `https://www.youtube-nocookie.com/embed/${m[1]}`;
+  m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (m) return `https://player.vimeo.com/video/${m[1]}`;
+  return "";
+}
+const playById = (id) => byId(S.plays, id);
+
+/* ---------- listener: only the team on screen ---------- */
+let playSub = null, playSubKey = "";
+function syncPlaySubs() {
+  const key = isActive() && S.tab === "teams" && S.teamId && S.teamTab === "plays" ? S.teamId : "";
+  if (key === playSubKey) return;
+  playSubKey = key;
+  if (playSub) { playSub(); playSub = null; }
+  S.plays = []; S.playsLoaded = false; S.playsDenied = false;
+  if (!key) return;
+  playSub = onSnapshot(query(collection(db, "plays"), where("teamId", "==", key)),
+    (snap) => { S.plays = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || "").localeCompare(b.name || "")); S.playsLoaded = true; render(); },
+    (err) => { console.warn("[plays]", err.code, err.message); S.playsLoaded = true; S.playsDenied = err.code === "permission-denied"; render(); });
+}
+
+/* ---------- list ---------- */
+function playsView(t) {
+  if (S.playEdit && S.playEdit.teamId === t.id) return playEditorView();
+  const manage = canManageTeam(t.id);
+  if (S.playView && S.playView.teamId === t.id) {
+    const p = S.playView.draft || playById(S.playView.id);
+    if (p) { delete S.playView.pending; return playViewerView(p, manage); }
+    if (S.playView.pending) return `<div class="spinner"></div>`;   // just saved, waiting for the database
+    if (S.playsLoaded) S.playView = null;
+  }
+  if (!S.playsLoaded) return `<div class="spinner"></div>`;
+  if (S.playsDenied) return `<div class="card empty">Only the players, parents and coaches of ${esc(t.name)} can see its plays.</div>`;
+  const cats = [...new Set(S.plays.map((p) => p.category).filter(Boolean))];
+  const filter = cats.includes(S.playCat) ? S.playCat : "all";
+  const list = S.plays.filter((p) => filter === "all" || p.category === filter);
+  return `<div class="section-title spread"><span>Playbook (${S.plays.length})</span>${manage ? `<button class="btn primary sm" data-act="play-new" data-team="${t.id}">+ New play</button>` : ""}</div>
+    ${cats.length > 1 ? `<div class="chips">${["all", ...cats].map((c) => `<button class="chip ${filter === c ? "on" : ""}" data-act="play-cat" data-cat="${esc(c)}">${c === "all" ? "All" : esc(c)}</button>`).join("")}</div>` : ""}
+    ${list.length ? `<div class="list">${list.map((p) => `<div class="item tap" data-act="play-open" data-id="${p.id}">
+        <svg class="play-thumb" viewBox="0 0 150 140" aria-hidden="true">${courtLines()}${(p.steps?.[0]?.o || []).map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)"/>`).join("")}${(p.steps?.[0]?.d || []).map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#fff" stroke="#c92a2a" stroke-width="1.4"/>`).join("")}</svg>
+        <div class="main"><div class="title">${esc(p.name)}</div>
+          <div class="small muted">${[p.category, plural((p.steps || []).length, "step"), p.videoUrl ? "▶ video" : ""].filter(Boolean).map(esc).join(" · ")}</div></div>
+        <span class="muted">›</span></div>`).join("")}</div>`
+      : `<div class="card empty">${manage ? "No plays yet. Tap <b>+ New play</b> to draw the first one." : "The coaches haven't added plays yet."}</div>`}`;
+}
+
+/* ---------- viewer (animated) ---------- */
+const anim = { raf: 0, playing: false, from: 0, t: 0, last: 0, hold: 0 };
+const STEP_MS = 1400, HOLD_MS = 450;
+function stopAnim() { anim.playing = false; cancelAnimationFrame(anim.raf); anim.raf = 0; anim.t = 0; }
+function playViewerView(p, manage) {
+  const v = S.playView, steps = p.steps || [];
+  if (v.step >= steps.length) v.step = Math.max(0, steps.length - 1);
+  const st = steps[v.step] || defaultStep();
+  const side = v.side || "both";
+  const vid = videoEmbed(p.videoUrl);
+  const draft = !!v.draft;
+  return `<button class="btn ghost sm" data-act="${draft ? "play-preview-close" : "play-close"}">‹ ${draft ? "Back to editing" : "Plays"}</button>
+    <div class="spread" style="margin-top:6px;align-items:flex-start"><div><h2>${esc(p.name || "Untitled play")}</h2>
+      <div class="muted small">${[p.category, plural(steps.length, "step")].filter(Boolean).map(esc).join(" · ")}</div></div>
+      ${manage && !draft ? `<button class="btn sm" data-act="play-edit" data-id="${p.id}">Edit</button>` : ""}</div>
+    ${p.description ? `<p class="small" style="white-space:pre-wrap;margin:8px 0 0">${esc(p.description)}</p>` : ""}
+    <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="play-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="court-wrap"><svg class="court" id="pv-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
+      <g id="pv-paths" class="paths" ${v.paths === false ? 'style="display:none"' : ""}>${anim.playing ? "" : pathsSvg(st, steps[v.step + 1], side)}</g>
+      <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pv-")).join("")}</g>
+      <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pv-")).join("")}</g>
+      ${ballSvg(st.ball >= 0 ? ballAt(st.o[st.ball]) : { x: -20, y: -20 }, "pv-ball")}</svg></div>
+    <div class="play-ctrl">
+      <button class="iconbtn" data-act="play-step" data-d="-99" aria-label="First step">⏮</button>
+      <button class="iconbtn" data-act="play-step" data-d="-1" aria-label="Previous step">◀</button>
+      <button class="btn primary" data-act="play-toggle" id="pv-toggle" style="min-width:96px">${anim.playing ? "❚❚ Pause" : "▶ Play"}</button>
+      <button class="iconbtn" data-act="play-step" data-d="1" aria-label="Next step">▶</button>
+      <span class="small muted" id="pv-label" style="margin-left:auto">Step ${v.step + 1} / ${steps.length}</span></div>
+    <div class="dots">${steps.map((_, i) => `<button class="dot ${i === v.step ? "on" : ""}" data-act="play-goto" data-i="${i}" aria-label="Step ${i + 1}"></button>`).join("")}</div>
+    <label class="check small"><input type="checkbox" data-change="play-paths" ${v.paths === false ? "" : "checked"}> Show the movement of the next step</label>
+    <div class="card small" id="pv-note" style="margin-top:8px;${st.note ? "" : "display:none"}">${esc(st.note || "")}</div>
+    ${vid ? `<div class="section-title">Video</div><div class="video"><iframe src="${esc(vid)}" title="Video" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
+      : p.videoUrl ? `<div class="section-title">Video</div><a class="btn block" href="${esc(p.videoUrl)}" target="_blank" rel="noopener">Open video ›</a>` : ""}
+    ${manage && !draft ? `<div class="row" style="margin-top:20px"><button class="btn" data-act="play-copy" data-id="${p.id}">Copy to another team</button>
+      <span style="flex:1"></span><button class="btn danger" data-act="play-delete" data-id="${p.id}">Delete</button></div>` : ""}`;
+}
+// draw the viewer at step i, moving towards step i+1 by t (0..1)
+function applyFrame(p, i, t) {
+  const svg = document.getElementById("pv-court");
+  if (!svg) return false;
+  const steps = p.steps || [], a = steps[i], b = steps[i + 1] || a, e = ease(t);
+  if (!a) return false;
+  const pos = { o: a.o.map((q, k) => lerpP(q, b.o[k], e)), d: a.d.map((q, k) => lerpP(q, b.d[k], e)) };
+  ["o", "d"].forEach((kind) => pos[kind].forEach((q, k) => { const g = document.getElementById(`pv-${kind}${k}`); if (g) g.setAttribute("transform", `translate(${q.x} ${q.y})`); }));
+  const ball = document.getElementById("pv-ball");
+  if (ball) {
+    let q = null;
+    if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) q = lerpP(ballAt(pos.o[a.ball]), ballAt(pos.o[b.ball]), ease(Math.min(1, t * 1.15)));
+    else if (b.ball >= 0 && (a.ball === b.ball || a.ball < 0)) q = ballAt(pos.o[b.ball]);
+    else if (a.ball >= 0) q = t < 0.5 ? ballAt(pos.o[a.ball]) : null;
+    ball.setAttribute("transform", q ? `translate(${q.x} ${q.y})` : "translate(-20 -20)");
+  }
+  return true;
+}
+function currentViewedPlay() { return S.playView ? S.playView.draft || playById(S.playView.id) : null; }
+function tickAnim(now) {
+  const p = currentViewedPlay();
+  if (!anim.playing || !p) { stopAnim(); return; }
+  const steps = p.steps || [];
+  const dt = now - (anim.last || now); anim.last = now;
+  if (anim.hold > 0) { anim.hold -= dt; anim.raf = requestAnimationFrame(tickAnim); return; }
+  anim.t += dt / STEP_MS;
+  if (anim.t >= 1) {
+    S.playView.step = Math.min(steps.length - 1, S.playView.step + 1);
+    anim.t = 0; anim.hold = HOLD_MS;
+    const lbl = document.getElementById("pv-label"); if (lbl) lbl.textContent = `Step ${S.playView.step + 1} / ${steps.length}`;
+    const note = document.getElementById("pv-note"), n = steps[S.playView.step]?.note || "";
+    if (note) { note.textContent = n; note.style.display = n ? "" : "none"; }
+    document.querySelectorAll(".dots .dot").forEach((d, i) => d.classList.toggle("on", i === S.playView.step));
+    if (S.playView.step >= steps.length - 1) { applyFrame(p, S.playView.step, 0); stopAnim(); render(); return; }
+  }
+  if (!applyFrame(p, S.playView.step, anim.t)) { stopAnim(); return; }
+  anim.raf = requestAnimationFrame(tickAnim);
+}
+function startAnim() {
+  const p = currentViewedPlay();
+  if (!p || (p.steps || []).length < 2) { toast("This play has only one step."); return; }
+  if (S.playView.step >= p.steps.length - 1) S.playView.step = 0;
+  anim.playing = true; anim.t = 0; anim.hold = 150; anim.last = 0;
+  render();
+  anim.raf = requestAnimationFrame(tickAnim);
+}
+
+/* ---------- editor ---------- */
+function openPlayEditor(teamId, p) {
+  stopAnim();
+  S.playView = null;
+  S.playEdit = p
+    ? { id: p.id, teamId: p.teamId, name: p.name || "", category: p.category || PLAY_CATEGORIES[0], description: p.description || "", videoUrl: p.videoUrl || "",
+        steps: (p.steps || [defaultStep()]).map((s) => ({ ...copyStep(s), note: s.note || "" })), cur: 0, side: "both", dirty: false }
+    : { id: null, teamId, name: "", category: PLAY_CATEGORIES[0], description: "", videoUrl: "", steps: [defaultStep()], cur: 0, side: "both", dirty: false };
+  render(); window.scrollTo(0, 0);
+}
+function playEditorView() {
+  const pe = S.playEdit, st = pe.steps[pe.cur], prev = pe.steps[pe.cur - 1];
+  const side = pe.side;
+  return `<div class="spread"><button class="btn ghost sm" data-act="play-edit-cancel">‹ Cancel</button>
+      <div class="row"><button class="btn sm" data-act="play-preview">▶ Preview</button><button class="btn primary sm" data-act="play-save">Save</button></div></div>
+    <h2 style="margin-top:8px">${pe.id ? "Edit play" : "New play"}</h2>
+    <label class="f">Name<input type="text" id="pe-name" data-pe="name" maxlength="60" value="${esc(pe.name)}" placeholder="Horns – flare"></label>
+    <label class="f">Category<select id="pe-cat" data-pe="category">${PLAY_CATEGORIES.map((c) => `<option ${pe.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+    <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="pe-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="court-wrap"><svg class="court editing" id="pe-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
+      ${prev ? `<g class="ghosts">${side !== "defense" ? prev.o.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)" opacity=".18"/>`).join("") : ""}${side !== "offense" ? prev.d.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#c92a2a" opacity=".15"/>`).join("") : ""}</g>
+        <g class="paths">${pathsSvg(prev, st, side)}</g>` : ""}
+      <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pe-")).join("")}</g>
+      <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pe-")).join("")}</g>
+      ${st.ball >= 0 ? ballSvg(ballAt(st.o[st.ball]), "pe-ball") : ""}</svg></div>
+    <p class="small muted" style="margin:6px 0 0">Drag the players to where they are at this step. <b>Tap an attacker</b> to give them the ball (tap again to take it away). ${prev ? "Faint circles and arrows show where they came from." : ""}</p>
+    <div class="section-title spread"><span>Step ${pe.cur + 1} of ${pe.steps.length}</span>
+      <div class="row"><button class="btn sm" data-act="pe-step-del" ${pe.steps.length < 2 ? "disabled" : ""}>Delete step</button><button class="btn primary sm" data-act="pe-step-add">+ Next step</button></div></div>
+    <div class="steps-bar">${pe.steps.map((_, i) => `<button class="stepbtn ${i === pe.cur ? "on" : ""}" data-act="pe-step-go" data-i="${i}">${i + 1}</button>`).join("")}</div>
+    <label class="f">Note for this step (optional)<textarea id="pe-note" data-pe-note rows="2" maxlength="300" placeholder="4 sets a screen for 1, 1 drives to the right elbow">${esc(st.note || "")}</textarea></label>
+    <label class="f">Description (optional)<textarea id="pe-desc" data-pe="description" rows="3" maxlength="1500" placeholder="When to use it, key reads…">${esc(pe.description)}</textarea></label>
+    <label class="f">Video link (optional)<input type="url" id="pe-video" data-pe="videoUrl" value="${esc(pe.videoUrl)}" placeholder="https://www.youtube.com/watch?v=…"></label>
+    <p class="small muted" style="margin:0">YouTube and Vimeo videos are shown inside the app; other links open in a new tab.</p>
+    ${pe.id ? `<div style="margin-top:18px"><button class="btn danger block" data-act="play-delete" data-id="${pe.id}">Delete play</button></div>` : ""}`;
+}
+async function savePlay() {
+  const pe = S.playEdit;
+  if (!pe.name.trim()) throw new Error("Give the play a name.");
+  if (!canManageTeam(pe.teamId)) throw new Error("You can't edit this team's plays.");
+  const url = pe.videoUrl.trim();
+  if (url && !/^https:\/\//i.test(url)) throw new Error("The video link must start with https://");
+  const data = { teamId: pe.teamId, name: pe.name.trim(), category: pe.category, description: pe.description.trim(), videoUrl: url,
+    steps: pe.steps.map((s) => ({ o: s.o.map(clampPos), d: s.d.map(clampPos), ball: s.ball ?? -1, note: (s.note || "").trim() })),
+    updatedAt: serverTimestamp(), updatedBy: S.user.uid };
+  const batch = writeBatch(db);
+  const ref = pe.id ? doc(db, "plays", pe.id) : doc(collection(db, "plays"));
+  if (pe.id) batch.update(ref, data);
+  else batch.set(ref, { ...data, createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp() });
+  log(batch, pe.id ? "Edited play" : "Created play", { label: `${data.name} · ${teamById(pe.teamId)?.name || ""}` });
+  await batch.commit();
+  S.playEdit = null;
+  S.playView = { id: ref.id, teamId: data.teamId, step: 0, side: "both", pending: true };
+  setTimeout(() => { if (S.playView?.pending) { S.playView = null; render(); } }, 8000);
+  toast("Play saved");
+  render();
+}
+function playCopyModal(p) {
+  const teams = S.teams.filter((t) => canManageTeam(t.id) && t.id !== p.teamId && (!activeSeason() || t.seasonId === activeSeason().id));
+  if (!teams.length) { toast("You have no other team to copy it to.", "error"); return; }
+  openModal({
+    title: "Copy play",
+    body: `<label class="f">Copy “${esc(p.name)}” to<select name="teamId">${teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>`,
+    submitLabel: "Copy",
+    onSubmit: async (d) => {
+      const { id, createdAt, updatedAt, ...rest } = p;
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, "plays")), { ...rest, teamId: d.teamId, createdBy: S.user.uid, createdByName: S.me.name || "", createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: S.user.uid });
+      log(batch, "Copied play", { label: `${p.name} → ${teamById(d.teamId)?.name || ""}` });
+      await batch.commit();
+      toast(`Copied to ${teamById(d.teamId)?.name || "team"}`);
+    }
+  });
+}
+
+function resetPlays() { stopAnim(); S.playView = null; S.playEdit = null; S.playEditHidden = null; }
+
+/* ---------- dragging in the editor ---------- */
+function svgPoint(svg, ev) {
+  const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+document.addEventListener("pointerdown", (ev) => {
+  const tok = ev.target.closest && ev.target.closest("#pe-court [data-tok]");
+  if (!tok || !S.playEdit) return;
+  const svg = document.getElementById("pe-court");
+  const kind = tok.dataset.tok[0], i = Number(tok.dataset.tok.slice(1));
+  const start = svgPoint(svg, ev), p0 = { ...S.playEdit.steps[S.playEdit.cur][kind][i] };
+  drag = { tok, svg, kind, i, start, p0, moved: false, id: ev.pointerId };
+  try { tok.setPointerCapture(ev.pointerId); } catch (_) {}
+  ev.preventDefault();
+});
+document.addEventListener("pointermove", (ev) => {
+  if (!drag || ev.pointerId !== drag.id) return;
+  const p = svgPoint(drag.svg, ev);
+  const q = clampPos({ x: drag.p0.x + p.x - drag.start.x, y: drag.p0.y + p.y - drag.start.y });
+  if (Math.hypot(q.x - drag.p0.x, q.y - drag.p0.y) > 1.5) drag.moved = true;
+  drag.tok.setAttribute("transform", `translate(${q.x} ${q.y})`);
+  drag.q = q;
+  const st = S.playEdit.steps[S.playEdit.cur];
+  if (drag.kind === "o" && st.ball === drag.i) { const b = document.getElementById("pe-ball"); const bp = ballAt(q); if (b) b.setAttribute("transform", `translate(${bp.x} ${bp.y})`); }
+  ev.preventDefault();
+});
+function endDrag(ev) {
+  if (!drag || (ev && ev.pointerId !== drag.id)) return;
+  const d = drag; drag = null;
+  const st = S.playEdit?.steps[S.playEdit.cur];
+  if (!st) return;
+  if (d.moved && d.q) { st[d.kind][d.i] = d.q; S.playEdit.dirty = true; }
+  else if (d.kind === "o") { st.ball = st.ball === d.i ? -1 : d.i; S.playEdit.dirty = true; }
+  render();
+}
+document.addEventListener("pointerup", endDrag);
+document.addEventListener("pointercancel", endDrag);
+
+Object.assign(ACTIONS, {
+  "play-new": (el) => openPlayEditor(el.dataset.team, null),
+  "play-open": (el) => { stopAnim(); S.playView = { id: el.dataset.id, teamId: S.teamId, step: 0, side: "both" }; render(); window.scrollTo(0, 0); },
+  "play-close": () => { stopAnim(); S.playView = null; render(); },
+  "play-cat": (el) => { S.playCat = el.dataset.cat; render(); },
+  "play-side": (el) => { S.playView.side = el.dataset.side; render(); },
+  "play-toggle": () => { if (anim.playing) { stopAnim(); render(); } else startAnim(); },
+  "play-step": (el) => {
+    const p = currentViewedPlay(); if (!p) return;
+    stopAnim();
+    const d = Number(el.dataset.d), n = (p.steps || []).length;
+    S.playView.step = d === -99 ? 0 : Math.max(0, Math.min(n - 1, S.playView.step + d));
+    render();
+  },
+  "play-goto": (el) => { stopAnim(); S.playView.step = Number(el.dataset.i); render(); },
+  "play-edit": (el) => { const p = playById(el.dataset.id); if (p) openPlayEditor(p.teamId, p); },
+  "play-copy": (el) => { const p = playById(el.dataset.id); if (p) playCopyModal(p); },
+  "play-delete": (el) => {
+    const p = playById(el.dataset.id); if (!p) return;
+    confirmRun(`Delete the play “${p.name}”?`, async () => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "plays", p.id));
+      log(batch, "Deleted play", { label: p.name });
+      await batch.commit();
+      stopAnim(); S.playView = null; S.playEdit = null; toast("Play deleted"); render();
+    });
+  },
+  "play-save": () => savePlay(),
+  "play-edit-cancel": () => {
+    const pe = S.playEdit;
+    const leave = () => { const id = pe.id; S.playEdit = null; S.playView = id ? { id, teamId: pe.teamId, step: 0, side: "both" } : null; render(); };
+    if (pe.dirty) { if (window.confirm("Discard your changes to this play?")) leave(); } else leave();
+  },
+  "play-preview": () => {
+    const pe = S.playEdit;
+    S.playView = { teamId: pe.teamId, step: 0, side: pe.side, draft: { name: pe.name, category: pe.category, description: pe.description, videoUrl: pe.videoUrl, steps: pe.steps } };
+    S.playEditHidden = S.playEdit; S.playEdit = null;
+    render(); window.scrollTo(0, 0);
+    if (pe.steps.length > 1) setTimeout(startAnim, 300);
+  },
+  "play-preview-close": () => { stopAnim(); S.playEdit = S.playEditHidden; S.playEditHidden = null; S.playView = null; render(); },
+  "pe-side": (el) => { S.playEdit.side = el.dataset.side; render(); },
+  "pe-step-go": (el) => { S.playEdit.cur = Number(el.dataset.i); render(); },
+  "pe-step-add": () => {
+    const pe = S.playEdit;
+    if (pe.steps.length >= 30) { toast("A play can have up to 30 steps.", "error"); return; }
+    pe.steps.splice(pe.cur + 1, 0, copyStep(pe.steps[pe.cur]));
+    pe.cur++; pe.dirty = true; render();
+  },
+  "pe-step-del": () => {
+    const pe = S.playEdit;
+    if (pe.steps.length < 2) return;
+    pe.steps.splice(pe.cur, 1); pe.cur = Math.max(0, pe.cur - 1); pe.dirty = true; render();
+  }
+});
+document.addEventListener("input", (e) => {
+  if (!S.playEdit) return;
+  const k = e.target.dataset?.pe;
+  if (k) { S.playEdit[k] = e.target.value; S.playEdit.dirty = true; }
+  if (e.target.dataset && "peNote" in e.target.dataset) { S.playEdit.steps[S.playEdit.cur].note = e.target.value; S.playEdit.dirty = true; }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.dataset?.change === "play-paths" && S.playView) { S.playView.paths = e.target.checked; render(); }
+  if (S.playEdit && e.target.dataset?.pe === "category") { S.playEdit.category = e.target.value; S.playEdit.dirty = true; }
 });
 
 /* =========================================================
