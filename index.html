@@ -250,7 +250,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.14";
+const VERSION = "v-0.15";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -3439,6 +3439,7 @@ function syncPlaySubs() {
 function playsView(t) {
   if (S.playEdit && S.playEdit.teamId === t.id) return playEditorView();
   const manage = canManageTeam(t.id);
+  if (S.playLib && manage && !(S.playView && S.playView.lib !== undefined)) return playLibraryView(t);
   if (S.playView && S.playView.teamId === t.id) {
     const p = S.playView.draft || playById(S.playView.id);
     if (p) { delete S.playView.pending; return playViewerView(p, manage); }
@@ -3450,7 +3451,7 @@ function playsView(t) {
   const cats = [...new Set(S.plays.map((p) => p.category).filter(Boolean))];
   const filter = cats.includes(S.playCat) ? S.playCat : "all";
   const list = S.plays.filter((p) => filter === "all" || p.category === filter);
-  return `<div class="section-title spread"><span>Playbook (${S.plays.length})</span>${manage ? `<button class="btn primary sm" data-act="play-new" data-team="${t.id}">+ New play</button>` : ""}</div>
+  return `<div class="section-title spread"><span>Playbook (${S.plays.length})</span>${manage ? `<span class="row"><button class="btn sm" data-act="lib-show">📚 Library</button><button class="btn primary sm" data-act="play-new" data-team="${t.id}">+ New play</button></span>` : ""}</div>
     ${cats.length > 1 ? `<div class="chips">${["all", ...cats].map((c) => `<button class="chip ${filter === c ? "on" : ""}" data-act="play-cat" data-cat="${esc(c)}">${c === "all" ? "All" : esc(c)}</button>`).join("")}</div>` : ""}
     ${list.length ? `<div class="list">${list.map((p) => `<div class="item tap" data-act="play-open" data-id="${p.id}">
         <svg class="play-thumb" viewBox="0 0 150 140" aria-hidden="true">${courtLines()}${(p.steps?.[0]?.o || []).map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)"/>`).join("")}${(p.steps?.[0]?.d || []).map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#fff" stroke="#c92a2a" stroke-width="1.4"/>`).join("")}</svg>
@@ -3470,11 +3471,12 @@ function playViewerView(p, manage) {
   const st = steps[v.step] || defaultStep();
   const side = v.side || "both";
   const vid = videoEmbed(p.videoUrl);
-  const draft = !!v.draft;
-  return `<button class="btn ghost sm" data-act="${draft ? "play-preview-close" : "play-close"}">‹ ${draft ? "Back to editing" : "Plays"}</button>
+  const draft = !!v.draft, fromLib = v.lib !== undefined;
+  return `<button class="btn ghost sm" data-act="${fromLib ? "lib-back" : draft ? "play-preview-close" : "play-close"}">‹ ${fromLib ? "Library" : draft ? "Back to editing" : "Plays"}</button>
     <div class="spread" style="margin-top:6px;align-items:flex-start"><div><h2>${esc(p.name || "Untitled play")}</h2>
       <div class="muted small">${[p.category, plural(steps.length, "step")].filter(Boolean).map(esc).join(" · ")}</div></div>
       ${manage && !draft ? `<button class="btn sm" data-act="play-edit" data-id="${p.id}">Edit</button>` : ""}</div>
+    ${fromLib && manage ? `<button class="btn primary block" style="margin-top:10px" data-act="lib-use">＋ Add to ${esc(teamById(v.teamId)?.name || "team")} and edit</button>` : ""}
     ${p.description ? `<p class="small" style="white-space:pre-wrap;margin:8px 0 0">${esc(p.description)}</p>` : ""}
     <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="play-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="court-wrap"><svg class="court" id="pv-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
@@ -3701,7 +3703,152 @@ document.addEventListener("input", (e) => {
   if (g) g.innerHTML = pathsSvg(pe.steps[pe.cur - 1], pe.steps[pe.cur], pe.side);
 });
 document.addEventListener("change", (e) => { if (e.target.dataset && "bend" in e.target.dataset && S.playEdit) render(); });
-function resetPlays() { stopAnim(); S.playView = null; S.playEdit = null; S.playEditHidden = null; }
+function resetPlays() { stopAnim(); S.playView = null; S.playEdit = null; S.playEditHidden = null; S.playLib = false; }
+
+/* =========================================================
+   PLAY LIBRARY (v-0.15): well-known plays a coach can add to the team's
+   playbook and then adapt. Positions: court units, basket at (75, 16).
+   o = attackers 1–5 as [x, y]; d = defenders (omitted → man-to-man, each
+   defender between his man and the basket).
+   ========================================================= */
+const LIB = [
+  { name: "Pick and roll (high)", category: "Half-court offense",
+    description: "The most used action in basketball. The big sets a ball screen at the top, the guard attacks and the big rolls to the rim. Reads: pass to the roller, pull-up, or kick to the open shooter.",
+    steps: [
+      { o: [[75, 90], [20, 62], [130, 62], [8, 12], [100, 22]], ball: 0, note: "Spread the floor: 5 on the block, shooters on the wings and in the corner." },
+      { o: [[75, 90], [20, 62], [130, 62], [8, 12], [83, 82]], ball: 0, acts: { o4: "screen" }, curves: { o4: -0.3 }, note: "5 comes up and sets the ball screen on 1's left side." },
+      { o: [[106, 62], [20, 62], [130, 62], [8, 12], [80, 30]], ball: 0, acts: { o0: "dribble" }, curves: { o0: 0.3 }, note: "1 comes off the screen tight to the shoulder; 5 rolls hard to the rim." },
+      { o: [[106, 62], [20, 62], [130, 62], [8, 12], [78, 26]], ball: 4, note: "Pocket pass to 5 on the roll." },
+      { o: [[106, 62], [20, 62], [130, 62], [8, 12], [76, 22]], ball: -1, shot: true, note: "5 finishes at the rim." }
+    ] },
+  { name: "Horns – pick and pop", category: "Half-court offense",
+    description: "Horns set: both bigs at the elbows, shooters in the corners. 5 screens for 1, 4 pops out for a three.",
+    steps: [
+      { o: [[75, 92], [8, 12], [142, 12], [52, 60], [98, 60]], ball: 0, note: "Horns: 4 and 5 at the elbows, 2 and 3 in the corners." },
+      { o: [[75, 92], [8, 12], [142, 12], [52, 60], [86, 82]], ball: 0, acts: { o4: "screen" }, note: "5 steps up and screens for 1." },
+      { o: [[110, 60], [8, 12], [142, 12], [36, 82], [78, 30]], ball: 0, acts: { o0: "dribble" }, curves: { o0: 0.25, o3: -0.2 }, note: "1 attacks right, 5 rolls, 4 pops out behind the three-point line." },
+      { o: [[110, 60], [8, 12], [142, 12], [36, 82], [78, 30]], ball: 3, note: "Skip pass to 4." },
+      { o: [[110, 60], [8, 12], [142, 12], [36, 82], [78, 30]], ball: -1, shot: true, note: "4 shoots the three." }
+    ] },
+  { name: "Give and go", category: "Half-court offense",
+    description: "The simplest two-player action: pass, cut to the basket, get it back.",
+    steps: [
+      { o: [[75, 90], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 0, note: "Five out: nobody in the paint." },
+      { o: [[75, 90], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 1, note: "1 passes to 2 on the wing." },
+      { o: [[62, 26], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 1, curves: { o0: 0.35 }, note: "1 fakes away, then cuts in front of the defender to the basket." },
+      { o: [[66, 22], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 0, note: "2 hits 1 on the cut." },
+      { o: [[70, 20], [22, 62], [128, 62], [8, 12], [142, 12]], ball: -1, shot: true, note: "Layup." }
+    ] },
+  { name: "UCLA cut", category: "Half-court offense",
+    description: "Guard passes to the wing and cuts off the high post's back screen to the basket.",
+    steps: [
+      { o: [[75, 90], [130, 62], [20, 62], [8, 12], [100, 60]], ball: 0, note: "5 at the high post on the ball side." },
+      { o: [[75, 90], [130, 62], [20, 62], [8, 12], [100, 60]], ball: 1, note: "1 passes to 2 on the wing." },
+      { o: [[88, 26], [130, 62], [20, 62], [8, 12], [100, 60]], ball: 1, acts: { o4: "screen" }, curves: { o0: -0.2 }, note: "5 back-screens; 1 cuts off 5's shoulder to the basket (UCLA cut)." },
+      { o: [[84, 22], [130, 62], [20, 62], [8, 12], [75, 88]], ball: 0, note: "2 passes to 1; 5 steps out to the top to receive if 1 is covered." },
+      { o: [[80, 20], [130, 62], [20, 62], [8, 12], [75, 88]], ball: -1, shot: true, note: "Layup." }
+    ] },
+  { name: "Flex", category: "Half-court offense",
+    description: "Continuity offense: flex screen on the baseline and down screen for the screener. Can be repeated from side to side.",
+    steps: [
+      { o: [[100, 84], [140, 14], [50, 84], [22, 60], [100, 22]], ball: 0, note: "2 in the right corner, 5 on the right block, 1 and 3 at the slots." },
+      { o: [[100, 84], [140, 14], [50, 84], [22, 60], [100, 22]], ball: 2, note: "Ball reversal: 1 passes to 3." },
+      { o: [[100, 84], [52, 24], [50, 84], [22, 60], [100, 22]], ball: 2, acts: { o4: "screen" }, curves: { o1: 0.25 }, note: "5 sets the flex screen; 2 cuts across the lane to the left block." },
+      { o: [[100, 50], [52, 24], [50, 84], [22, 60], [100, 84]], ball: 1, acts: { o0: "screen" }, note: "1 down-screens for 5 (screen the screener); 3 feeds 2 on the block." },
+      { o: [[100, 50], [52, 24], [50, 84], [22, 60], [100, 84]], ball: -1, shot: true, note: "2 finishes; if not open, 5 at the top restarts the flex on the other side." }
+    ] },
+  { name: "Floppy", category: "Half-court offense",
+    description: "Shooter starts under the basket and chooses which side to come off two screens.",
+    steps: [
+      { o: [[75, 92], [75, 18], [22, 60], [52, 24], [98, 24]], ball: 0, note: "2 under the basket, 4 and 5 on the blocks." },
+      { o: [[75, 92], [126, 58], [22, 60], [52, 24], [98, 24]], ball: 0, acts: { o3: "screen", o4: "screen" }, curves: { o1: -0.35 }, note: "4 and 5 screen; 2 reads the defender and comes off 5 to the right wing." },
+      { o: [[75, 92], [126, 58], [22, 60], [52, 24], [98, 24]], ball: 1, note: "1 passes to 2." },
+      { o: [[75, 92], [126, 58], [22, 60], [52, 24], [98, 24]], ball: -1, shot: true, note: "Catch and shoot." }
+    ] },
+  { name: "Spain pick and roll", category: "Half-court offense",
+    description: "Pick and roll plus a back screen on the roller's defender by a third player, who then pops out for a three.",
+    steps: [
+      { o: [[75, 92], [8, 12], [142, 12], [20, 62], [100, 24]], ball: 0, note: "Start as a normal pick and roll." },
+      { o: [[75, 92], [70, 54], [142, 12], [20, 62], [83, 82]], ball: 0, acts: { o4: "screen" }, curves: { o1: -0.3 }, note: "5 screens for 1; 2 comes up from the corner behind the screen." },
+      { o: [[108, 62], [80, 64], [142, 12], [20, 62], [78, 34]], ball: 0, acts: { o0: "dribble", o1: "screen" }, curves: { o0: 0.25 }, note: "1 attacks; 5 rolls; 2 back-screens 5's defender." },
+      { o: [[108, 62], [70, 88], [142, 12], [20, 62], [78, 26]], ball: 4, note: "Pass to 5 at the rim — or to 2 popping to the top." },
+      { o: [[108, 62], [70, 88], [142, 12], [20, 62], [77, 22]], ball: -1, shot: true, note: "5 finishes." }
+    ] },
+  { name: "Hammer", category: "Half-court offense",
+    description: "Baseline drive while the weak-side big screens the shooter's defender; the shooter drifts to the corner for a three.",
+    steps: [
+      { o: [[128, 62], [22, 60], [75, 90], [52, 24], [98, 58]], ball: 0, note: "1 on the right wing with the ball, 2 on the left wing." },
+      { o: [[118, 18], [22, 60], [75, 90], [30, 30], [98, 58]], ball: 0, acts: { o0: "dribble", o3: "screen" }, curves: { o0: 0.2 }, note: "1 drives baseline; 4 sets the hammer screen on 2's defender." },
+      { o: [[118, 18], [8, 14], [75, 90], [30, 30], [98, 58]], ball: 0, curves: { o1: 0.3 }, note: "2 drifts to the left corner." },
+      { o: [[118, 18], [8, 14], [75, 90], [30, 30], [98, 58]], ball: 1, note: "1 throws it across the baseline to 2." },
+      { o: [[118, 18], [8, 14], [75, 90], [30, 30], [98, 58]], ball: -1, shot: true, note: "Corner three." }
+    ] },
+  { name: "Box – baseline out of bounds", category: "Baseline out of bounds",
+    description: "Box set under the basket: the shooter comes off a down screen to the corner.",
+    steps: [
+      { o: [[52, 54], [52, 24], [96, 4], [98, 24], [98, 54]], ball: 2, note: "3 inbounds. Box: 1 and 5 at the elbows, 2 and 4 on the blocks." },
+      { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: 2, acts: { o0: "screen" }, curves: { o1: 0.3 }, note: "1 down-screens for 2, who pops to the corner; 4 cuts to the rim." },
+      { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: 1, note: "Inbound to 2 — or to 4 if the defense switches." },
+      { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: -1, shot: true, note: "Corner shot." }
+    ] },
+  { name: "2-3 zone defense", category: "Zone defense",
+    description: "How the 2-3 zone slides as the ball moves. Switch to Defense to see only the defenders.",
+    steps: [
+      { o: [[75, 92], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 0,
+        d: [[60, 64], [90, 64], [32, 32], [75, 24], [118, 32]], note: "Base: two guards at the top, three players across the lane." },
+      { o: [[75, 92], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 2,
+        d: [[82, 62], [116, 56], [52, 34], [88, 26], [126, 32]], note: "Ball to the right wing: X2 closes out, X1 drops to the high post, the back line shifts right." },
+      { o: [[75, 92], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 4,
+        d: [[90, 60], [118, 48], [66, 28], [100, 22], [136, 20]], note: "Ball to the corner: X5 closes out, X4 fronts the block, X3 covers the rim, X2 sinks to the elbow." },
+      { o: [[75, 92], [22, 62], [128, 62], [8, 12], [142, 12]], ball: 0,
+        d: [[60, 64], [90, 64], [32, 32], [75, 24], [118, 32]], note: "Ball back to the top: everybody returns to the base." }
+    ] }
+];
+// man-to-man: defender about 1 m from his man, between him and the basket
+// (near the basket or on the baseline he stands on the court side instead)
+function manDefender(p) {
+  const B = { x: 75, y: 16 }, T = { x: 75, y: 75 };
+  let tx = B.x - p.x, ty = B.y - p.y, dist = Math.hypot(tx, ty);
+  if (dist < 16 || p.y < 8) { tx = T.x - p.x; ty = T.y - p.y; dist = Math.hypot(tx, ty); }
+  const k = 11 / (dist || 1);
+  return clampPos({ x: p.x + tx * k, y: p.y + ty * k });
+}
+function libToPlay(t, teamId) {
+  return {
+    teamId, name: t.name, category: t.category, description: t.description, videoUrl: "",
+    steps: t.steps.map((s) => {
+      const o = s.o.map(([x, y]) => ({ x, y }));
+      const d = s.d ? s.d.map(([x, y]) => ({ x, y })) : o.map(manDefender);
+      return { o, d, ball: s.ball, note: s.note || "", acts: { ...(s.acts || {}) }, curves: { ...(s.curves || {}) }, marks: [], bx: s.bx || "pass", shot: !!s.shot };
+    })
+  };
+}
+function playLibraryView(t) {
+  return `<button class="btn ghost sm" data-act="lib-close">‹ Plays</button>
+    <h2 style="margin-top:6px">Play library</h2>
+    <p class="small muted" style="margin:4px 0 12px">Well-known plays ready to use. Open one to watch it, then <b>Add to ${esc(t.name)}</b> — you can change anything before saving.</p>
+    <div class="list">${LIB.map((p, i) => { const st = libToPlay(p, t.id).steps[0]; return `<div class="item tap" data-act="lib-open" data-i="${i}">
+      <svg class="play-thumb" viewBox="0 0 150 140" aria-hidden="true">${courtLines()}${st.o.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)"/>`).join("")}${st.d.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#fff" stroke="#c92a2a" stroke-width="1.4"/>`).join("")}</svg>
+      <div class="main"><div class="title">${esc(p.name)}</div><div class="small muted">${esc(p.category)} · ${plural(p.steps.length, "step")}</div></div><span class="muted">›</span></div>`; }).join("")}</div>`;
+}
+Object.assign(ACTIONS, {
+  "lib-show": () => { stopAnim(); S.playLib = true; S.playView = null; render(); window.scrollTo(0, 0); },
+  "lib-close": () => { S.playLib = false; render(); },
+  "lib-back": () => { stopAnim(); S.playView = null; render(); window.scrollTo(0, 0); },
+  "lib-open": (el) => {
+    const i = Number(el.dataset.i);
+    S.playView = { teamId: S.teamId, step: 0, side: "both", draft: libToPlay(LIB[i], S.teamId), lib: i };
+    render(); window.scrollTo(0, 0);
+    setTimeout(startAnim, 400);
+  },
+  "lib-use": () => {
+    const v = S.playView; if (!v || v.lib === undefined) return;
+    const p = libToPlay(LIB[v.lib], S.teamId);
+    S.playLib = false;
+    openPlayEditor(S.teamId, p);
+    S.playEdit.dirty = true;
+  }
+});
 
 /* ---------- dragging in the editor ---------- */
 function svgPoint(svg, ev) {
