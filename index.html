@@ -231,6 +231,7 @@ button.chip{border:none;cursor:pointer;font:inherit;font-size:13px}
 button.chip.on{background:var(--accent);color:#fff}
 .video{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000}
 .video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -239,9 +240,9 @@ button.chip.on{background:var(--accent);color:#fff}
 <div id="toast"></div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+  sendPasswordResetEmail, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging.js";
 import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
   serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, where, orderBy, limit, Timestamp
@@ -250,7 +251,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.17";
+const VERSION = "v-0.18";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -657,6 +658,7 @@ function renderNow() {
   else if (!S.settings) html = viewSetup();
   else if (!S.user) html = viewAuth();
   else if (!S.me) html = viewCompleteProfile();
+  else if (S.me.active && S.me.mustChangePassword === true) html = viewChangePassword();
   else if (!S.me.active) html = viewDisabled();
   else html = viewShell();
   // keep what the user is typing in on-page forms when live data re-renders the page
@@ -772,6 +774,17 @@ function viewCompleteProfile() {
       <label class="f">Invite code<input type="text" name="code" value="${esc(S.pendingInvite)}" autocapitalize="characters" autocomplete="off" required></label>
       <label class="f">Your name <span style="font-weight:400">(only needed for parent invites)</span><input type="text" name="name" autocomplete="name"></label>
       <button class="btn primary block" type="submit">Join</button>
+      <button class="btn ghost block" type="button" data-act="logout">Log out</button>
+    </form></div>${footer()}</div>`;
+}
+// v-0.18: account created by the club with a temporary password → choose your own first
+function viewChangePassword() {
+  return `<div class="wrap auth">${authBrand("Choose your own password")}
+    <div class="card"><form data-form="newpass" class="stack">
+      <p class="small muted" style="margin:0">Welcome${S.me.name ? `, <b>${esc(S.me.name.split(" ")[0])}</b>` : ""}! You logged in with a temporary password. Choose your own password to continue.</p>
+      <label class="f">New password<input type="password" name="p1" id="np1" autocomplete="new-password" minlength="6" required></label>
+      <label class="f">Repeat new password<input type="password" name="p2" id="np2" autocomplete="new-password" minlength="6" required></label>
+      <button class="btn primary block" type="submit">Save and continue</button>
       <button class="btn ghost block" type="button" data-act="logout">Log out</button>
     </form></div>${footer()}</div>`;
 }
@@ -1280,9 +1293,21 @@ function inviteNewModal(type, memberId) {
         <label class="f">Can be used<select name="maxUses">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${n === defaultUses ? "selected" : ""}>${n} time${n > 1 ? "s" : ""}</option>`).join("")}</select></label>
         <label class="f">Expires in<select name="days">${[3, 7, 14, 30].map((n) => `<option value="${n}" ${n === 14 ? "selected" : ""}>${n} days</option>`).join("")}</select></label>
       </div>
-      ${type === "guardian" ? `<p class="small muted" style="margin:0">Use 2 if both parents should join with the same code.</p>` : ""}`,
+      ${type === "guardian" ? `<p class="small muted" style="margin:0">Use 2 if both parents should join with the same code.</p>` : ""}
+      <label class="check"><input type="checkbox" name="makeLogin" id="inv-mk"> Create the login now with a temporary password</label>
+      <div class="subsection" id="inv-login" hidden>
+        ${type === "guardian" ? `<label class="f">Parent's name<input type="text" name="accName" autocomplete="off" placeholder="Anna Jensen"></label>` : ""}
+        <label class="f">Email for logging in<input type="email" name="accEmail" autocomplete="off" placeholder="name@example.com"></label>
+        <label class="f">Temporary password<input type="text" name="accPass" value="${esc(genTempPassword())}" autocomplete="off" minlength="6"></label>
+        <p class="small muted" style="margin:0">They log in with this email and password and must choose their own password the first time.</p>
+      </div>`,
     submitLabel: "Create invite",
     onSubmit: async (d) => {
+      if (d.makeLogin) {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((d.accEmail || "").trim())) throw new Error("Enter a valid email for the login.");
+        if ((d.accPass || "").length < 6) throw new Error("The temporary password must be at least 6 characters.");
+        if (type === "guardian" && !(d.accName || "").trim()) throw new Error("Enter the parent's name.");
+      }
       let code = genCode();
       for (let i = 0; i < 3 && (await getDoc(doc(db, "invites", code))).exists(); i++) code = genCode();
       const data = {
@@ -1295,32 +1320,71 @@ function inviteNewModal(type, memberId) {
       batch.set(doc(db, "invites", code), data);
       log(batch, "Created invite", { label: `${code} · ${describeInvite(data)}` });
       await batch.commit();
+      if (d.makeLogin) {
+        const creds = await createLoginForInvite(code, data, d.accEmail.trim(), d.accPass, (d.accName || "").trim());
+        setTimeout(() => inviteShowModal(code, data, creds), 0);
+        return;
+      }
       setTimeout(() => inviteShowModal(code, data), 0);
     }
   });
+  $("#inv-mk")?.addEventListener("change", (e) => { $("#inv-login").hidden = !e.target.checked; });
 }
-function inviteShowModal(code, data) {
+function genTempPassword() {
+  const arr = new Uint32Array(6); crypto.getRandomValues(arr);
+  return "Bb-" + Array.from(arr, (n) => CODE_ALPHABET[n % CODE_ALPHABET.length]).join("");
+}
+// Creates the Firebase login in a second, invisible app instance, so the admin stays logged in.
+// The new account then redeems the invite itself (same database rules as a normal sign-up).
+async function createLoginForInvite(code, inv, email, password, name) {
+  const secApp = getApps().find((a) => a.name === "account-maker") || initializeApp(firebaseConfig, "account-maker");
+  const secAuth = getAuth(secApp), secDb = getFirestore(secApp);
+  let cred;
+  try { cred = await createUserWithEmailAndPassword(secAuth, email, password); }
+  catch (err) {
+    if (err?.code === "auth/email-already-in-use") throw new Error("That email already has a login. The invite was created — send them the code so they can redeem it from their profile.");
+    throw err;
+  }
+  const uid = cred.user.uid, self = inv.type !== "guardian";
+  try {
+    const batch = writeBatch(secDb);
+    batch.update(doc(secDb, "invites", code), { uses: increment(1), usedBy: arrayUnion(uid), lastUsedAt: serverTimestamp() });
+    batch.set(doc(secDb, "users", uid), { name: self ? inv.memberName : name, email, phone: "", active: true,
+      memberId: self ? inv.memberId : null, joinedWith: code, mustChangePassword: true, createdAt: serverTimestamp() });
+    if (self) batch.update(doc(secDb, "members", inv.memberId), { uid, lastInvite: code, updatedAt: serverTimestamp() });
+    else batch.update(doc(secDb, "members", inv.memberId), { guardianUids: arrayUnion(uid), lastInvite: code, updatedAt: serverTimestamp() });
+    await batch.commit();
+  } finally {
+    try { await signOut(secAuth); } catch (_) {}
+  }
+  log(null, "Created login with temporary password", { label: `${email} · ${describeInvite(inv)}` });
+  toast("Login created");
+  return { email, password };
+}
+function inviteShowModal(code, data, creds = null) {
   const inv = data || byId(S.invites, code);
   const link = inviteLink(code);
   const text = `You're invited to ${appName()} (${clubName()}) · ${describeInvite(inv)}. Open ${link} or use code ${code}.`;
   openModal({
-    title: "Invite ready",
+    title: creds ? "Login ready" : "Invite ready",
     body: `<div class="notice">${esc(describeInvite(inv))}</div>
-      <div class="code">${esc(code)}</div>
-      <div class="linkbox">${esc(link)}</div>
-      <label class="f">Send to (email, optional)<input type="email" id="invite-to" placeholder="name@example.com" autocomplete="off"></label>
-      <button type="button" class="btn primary block" data-act="invite-email" data-code="${esc(code)}">✉️ Send by email with install guide</button>
-      <div class="grid2">
+      ${creds ? "" : `<div class="code">${esc(code)}</div>
+      <div class="linkbox">${esc(link)}</div>`}
+      ${creds ? `<div class="notice ok"><b>Login created.</b> Email: <b>${esc(creds.email)}</b><br>Temporary password: <b class="mono">${esc(creds.password)}</b><br>
+        <span class="small">They must choose their own password at the first login. Send it now — the temporary password is not shown again.</span></div>` : ""}
+      <label class="f">Send to (email, optional)<input type="email" id="invite-to" value="${esc(creds?.email || "")}" placeholder="name@example.com" autocomplete="off"></label>
+      <button type="button" class="btn primary block" data-act="invite-email" data-code="${esc(code)}" ${creds ? `data-email="${esc(creds.email)}" data-pass="${esc(creds.password)}"` : ""}>✉️ Send by email with install guide</button>
+      ${creds ? "" : `<div class="grid2">
         <button type="button" class="btn" data-act="copy" data-text="${esc(link)}">Copy link</button>
         <button type="button" class="btn" data-act="share" data-text="${esc(text)}">Share…</button>
-      </div>
+      </div>`}
       <p class="small muted" style="margin:0">Valid until ${esc(fmtDate(inv.expiresAt))} · ${plural(inv.maxUses, "use")}.
         The <a href="${esc(new URL("install-guide.pdf", location.href).href)}" target="_blank" rel="noopener">install guide (PDF)</a> explains how to join and put the app on the phone.</p>`
   });
 }
 // Invite email: on phones (and Safari on Mac) the share sheet can attach the install guide PDF;
 // elsewhere we open the email app with the guide as a link (browsers can't attach files to mailto).
-async function sendInviteEmail(code) {
+async function sendInviteEmail(code, creds = null) {
   const inv = byId(S.invites, code) || {};
   const link = inviteLink(code), guide = new URL("install-guide.pdf", location.href).href;
   const to = ($("#invite-to")?.value || "").trim();
@@ -1328,12 +1392,21 @@ async function sendInviteEmail(code) {
   const body = [
     `Hi${inv.memberName ? " " + inv.memberName.split(" ")[0] : ""},`, "",
     `You're invited to ${appName()}, the team app of ${clubName()} (${describeInvite(inv)}).`, "",
-    `1. Open this link on your phone: ${link}`,
-    `   (or go to ${new URL("./", location.href).href} → "Join with code" and type ${code})`,
-    `2. Create your account with your email and a password.`,
-    `3. Put the app on your home screen and turn on notifications.`, "",
+    ...(creds ? [
+      `Your login is ready:`,
+      `   Email: ${creds.email}`,
+      `   Temporary password: ${creds.password}`, "",
+      `1. Open ${new URL("./", location.href).href} on your phone and tap "Log in".`,
+      `2. Log in with the email and temporary password above, then choose your own password.`,
+      `3. Put the app on your home screen and turn on notifications.`, ""
+    ] : [
+      `1. Open this link on your phone: ${link}`,
+      `   (or go to ${new URL("./", location.href).href} → "Join with code" and type ${code})`,
+      `2. Create your account with your email and a password.`,
+      `3. Put the app on your home screen and turn on notifications.`, ""
+    ]),
     `The attached guide shows every step with pictures. You can also open it here: ${guide}`, "",
-    `The invite is personal and valid until ${fmtDate(inv.expiresAt)}.`, "",
+    creds ? `Keep this email private: the password is only for you.` : `The invite is personal and valid until ${fmtDate(inv.expiresAt)}.`, "",
     `See you on the court!`, `${S.me?.name || clubName()}`
   ].join("\n");
   let file = null;
@@ -1475,6 +1548,17 @@ const FORMS = {
     S.busy = true; render();
     try { await redeemInvite(code, data, { createProfile: true, name: d.name || "" }); S.joinInvite = null; toast(`Welcome to ${clubName()}!`); }
     finally { S.busy = false; render(); }
+  },
+  async newpass(d) {
+    if ((d.p1 || "").length < 6) throw new Error("The password must be at least 6 characters.");
+    if (d.p1 !== d.p2) throw new Error("The two passwords are not the same.");
+    try { await updatePassword(auth.currentUser, d.p1); }
+    catch (err) {
+      if (err?.code === "auth/requires-recent-login") { toast("For security, log in again with the temporary password, then choose your new one.", "error"); await signOut(auth); return; }
+      throw err;
+    }
+    await updateDoc(doc(db, "users", S.user.uid), { mustChangePassword: false, updatedAt: serverTimestamp() });
+    toast("Password saved. Welcome!");
   },
   async complete(d) {
     const { code, data } = await fetchInvite(d.code);
@@ -1638,7 +1722,7 @@ const ACTIONS = {
     try { await navigator.clipboard.writeText(el.dataset.text); toast("Copied"); }
     catch (_) { window.prompt("Copy this:", el.dataset.text); }
   },
-  "invite-email": (el) => sendInviteEmail(el.dataset.code),
+  "invite-email": (el) => sendInviteEmail(el.dataset.code, el.dataset.email ? { email: el.dataset.email, password: el.dataset.pass } : null),
   share: async (el) => {
     if (navigator.share) { try { await navigator.share({ title: appName(), text: el.dataset.text }); } catch (_) {} }
     else { try { await navigator.clipboard.writeText(el.dataset.text); toast("Message copied"); } catch (_) { window.prompt("Copy this:", el.dataset.text); } }
