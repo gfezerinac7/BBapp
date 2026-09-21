@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1d4ed8">
+<meta name="theme-color" content="#3c3a77">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>BBapp</title>
@@ -11,11 +11,11 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="BBapp">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%231d4ed8'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='%23ffffff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%233c3a77'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='%23ffffff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#f4f7fc; --surface:#ffffff; --surface-2:#eef3fa; --text:#0f1b2d; --muted:#5b6b80;
-  --line:#dce4ef; --accent:#1d4ed8; --accent-ink:#ffffff; --accent-soft:#e6eeff; --accent-dark:#163fae;
+  --line:#dce4ef; --accent:#3c3a77; --accent-ink:#ffffff; --accent-soft:#ebeaf6; --accent-dark:#2d2b5e;
   --ok:#1f7a4a; --ok-soft:#e2f4ea; --warn:#9a5b00; --warn-soft:#fdf1dc; --bad:#b3261e; --bad-soft:#fbe4e2;
   --radius:14px; --shadow:0 1px 2px rgba(15,27,45,.05),0 4px 14px rgba(15,27,45,.05);
   color-scheme: light;
@@ -35,6 +35,14 @@ a{color:var(--accent)}
 .top .wrap{display:flex;align-items:center;gap:12px;height:56px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
 .brand svg{flex:none}
+.logo{display:inline-flex;align-items:center;justify-content:center;flex:none;vertical-align:middle}
+.logo img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.logo.on-blue{border-radius:6px;overflow:hidden}
+.logo-prev{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.logo-prev div{height:130px;border-radius:12px;display:grid;place-items:center;padding:12px;border:1px solid var(--line);overflow:hidden;min-width:0}
+.logo-prev img{max-width:100%;max-height:104px;object-fit:contain;display:block}
+.logo-prev .checker{background:repeating-conic-gradient(#e9eef5 0 25%,#fff 0 50%) 0 0/16px 16px}
+.logo-prev .blue{background:var(--accent)}
 .brand .names{min-width:0}
 .brand .app{font-weight:700;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand .club{font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -203,7 +211,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.10";
+const VERSION = "v-0.11";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -233,6 +241,7 @@ const S = {
   seasons: [], teams: [], members: [], users: [], invites: [], logs: [], failedLists: [],
   events: [], venues: [], absences: [], attendance: {}, eventLog: [], calTeam: "mine", calView: "upcoming", calType: "all", weekStart: null, eventId: null,
   announcements: [], tournaments: [], tournamentGames: [], gameStats: {}, referees: [], volunteers: [], fees: [], feePayments: [], myPayments: {},
+  logo: null,
   pubEvents: [], pubStandings: [], pubNews: [], pubTeams: [], pubSite: null, loaded: {}, pubStatus: null,
   statSettings: null, teamTab: "roster", tournamentId: null, statMode: "total", feeId: null,
   tab: "home", teamId: null, seasonFilter: null, memberSearch: "", memberScope: "mine", roleFilter: "all",
@@ -354,6 +363,11 @@ function coachLine(m) {
 onSnapshot(doc(db, "settings", "stats"),
   (snap) => { S.statSettings = snap.exists() ? snap.data() : null; render(); },
   (err) => console.warn("[stats settings]", err.code));
+
+// v-0.11: club logo (small image stored as a data URL, readable without login)
+onSnapshot(doc(db, "settings", "logo"),
+  (snap) => { S.logo = snap.exists() ? snap.data().dataUrl || null : null; applyFavicon(); render(); },
+  (err) => console.warn("[logo]", err.code));
 
 onSnapshot(doc(db, "settings", "app"),
   (snap) => { S.settings = snap.exists() ? snap.data() : null; S.settingsLoaded = true; S.dbError = null; render(); },
@@ -615,7 +629,17 @@ function renderNow() {
   }
 }
 
-const BALL = (size = 34, onBlue = false) => `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="${onBlue ? "#ffffff" : "var(--accent)"}"/><path d="M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42" stroke="${onBlue ? "var(--accent)" : "#ffffff"}" stroke-width="3" fill="none"/></svg>`;
+const BALL_SVG = (size = 34, onBlue = false) => `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="${onBlue ? "#ffffff" : "var(--accent)"}"/><path d="M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42" stroke="${onBlue ? "var(--accent)" : "#ffffff"}" stroke-width="3" fill="none"/></svg>`;
+const BALL = (size = 34, onBlue = false) => S.logo
+  ? `<span class="logo${onBlue ? " on-blue" : ""}" style="width:${size}px;height:${size}px"><img src="${S.logo}" alt=""></span>`
+  : BALL_SVG(size, onBlue);
+const FAVICON_DEFAULT = document.querySelector('link[rel="icon"]')?.href || "";
+function applyFavicon() {
+  const link = document.querySelector('link[rel="icon"]');
+  if (link) link.href = S.logo || FAVICON_DEFAULT;
+  const touch = document.querySelector('link[rel="apple-touch-icon"]');
+  if (touch && S.logo) touch.href = S.logo;
+}
 const ICONS = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>`,
   teams: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.6c2.8-.3 4.9 1.4 5.5 4.4"/></svg>`,
@@ -712,7 +736,7 @@ function viewShell() {
   const views = { home: viewHome, news: viewNews, calendar: viewCalendar, teams: viewTeams, members: viewMembers, admin: viewAdmin };
   return `
   <header class="top"><div class="wrap">
-    <div class="brand">${BALL(34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
+    <div class="brand">${BALL(S.logo ? 42 : 34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
     <button class="avatar" data-act="profile" aria-label="Profile">${esc(initials(S.me.name))}</button>
   </div></header>
   <main><div class="wrap">${rulesBanner()}${views[S.tab]()}${footer()}</div></main>
@@ -852,6 +876,9 @@ function viewAdmin() {
     <div class="section-title">Club</div>
     <div class="card spread"><div><div style="font-weight:600">${esc(clubName())}</div><div class="small muted">App name: ${esc(appName())}</div></div>
       <button class="btn sm" data-act="settings-edit">Edit</button></div>
+    <div class="card spread" style="margin-top:10px"><div class="row" style="flex-wrap:nowrap">${BALL(44)}<div><div style="font-weight:600">Club logo</div>
+      <div class="small muted">${S.logo ? "Shown in the app, on the login screen, as the browser icon and on the website." : "No logo yet — the basketball is used."}</div></div></div>
+      <div class="row" style="flex-wrap:nowrap">${S.logo ? `<button class="btn sm" data-act="logo-remove">Remove</button>` : ""}<button class="btn primary sm" data-act="logo-upload">${S.logo ? "Change" : "Upload logo"}</button></div></div>
     ${websiteSection()}
 
     <div class="section-title spread"><span>Seasons</span><button class="btn primary sm" data-act="season-new">+ New season</button></div>
@@ -3100,6 +3127,129 @@ Object.assign(ACTIONS, {
     log(batch, now ? "Marked fee as pending" : "Marked fee as paid", { label: `${f.name} · ${fullName(m)}` });
     await batch.commit();
   }
+});
+
+/* =========================================================
+   CLUB LOGO (v-0.11)
+   The admin picks an image; it is cleaned in the browser (white background
+   around the logo removed, empty borders trimmed, max 512 px) and stored as a
+   small PNG data URL in settings/logo. No Firebase Storage needed.
+   ========================================================= */
+function loadImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("That file is not an image the browser can read. Use PNG or JPG."));
+    img.src = URL.createObjectURL(file);
+  });
+}
+// Removes near-white pixels that touch the outside of the image (flood fill from the edges),
+// so white parts *inside* the logo are kept. Then trims empty borders.
+function processLogo(img, { removeWhite = true, tolerance = 40, maxSize = 512 } = {}) {
+  const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  const im = ctx.getImageData(0, 0, w, h), d = im.data;
+  if (removeWhite) {
+    const lim = 255 - tolerance;
+    const whiteish = (i) => d[i + 3] < 16 || (d[i] >= lim && d[i + 1] >= lim && d[i + 2] >= lim);
+    const seen = new Uint8Array(w * h), stack = [];
+    const push = (x, y) => { const k = y * w + x; if (!seen[k] && whiteish(k * 4)) { seen[k] = 1; stack.push(k); } };
+    for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+    for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+    while (stack.length) {
+      const k = stack.pop(), x = k % w, y = (k / w) | 0;
+      d[k * 4 + 3] = 0;
+      if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y);
+      if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1);
+    }
+    // soften the light fringe next to the removed area (anti-aliased edges)
+    const soft = 255 - tolerance * 2.5;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const k = y * w + x, i = k * 4;
+      if (seen[k] || d[i + 3] === 0) continue;
+      const near = (x > 0 && seen[k - 1]) || (x < w - 1 && seen[k + 1]) || (y > 0 && seen[k - w]) || (y < h - 1 && seen[k + w]);
+      if (!near) continue;
+      const light = Math.min(d[i], d[i + 1], d[i + 2]);
+      if (light > soft) d[i + 3] = Math.round(d[i + 3] * Math.max(0, (255 - light) / (255 - soft)));
+    }
+    ctx.putImageData(im, 0, 0);
+  }
+  // trim transparent borders
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (d[(y * w + x) * 4 + 3] > 12) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) throw new Error("Nothing is left of the image. Lower the background sensitivity or switch it off.");
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1, pad = Math.round(Math.max(cw, ch) * 0.03);
+  const f = Math.min(1, maxSize / (Math.max(cw, ch) + pad * 2));   // keep the logo's own shape
+  const o = document.createElement("canvas");
+  o.width = Math.round((cw + pad * 2) * f); o.height = Math.round((ch + pad * 2) * f);
+  const octx = o.getContext("2d");
+  octx.imageSmoothingQuality = "high";
+  octx.drawImage(c, x0, y0, cw, ch, Math.round(pad * f), Math.round(pad * f), Math.round(cw * f), Math.round(ch * f));
+  let url = o.toDataURL("image/png");
+  // keep the Firestore document small (limit 1 MB)
+  for (let k = 0.75; url.length > 600000 && o.width * k > 96; k *= 0.75) {
+    const s2 = document.createElement("canvas"); s2.width = Math.round(o.width * k); s2.height = Math.round(o.height * k);
+    s2.getContext("2d").drawImage(o, 0, 0, s2.width, s2.height);
+    url = s2.toDataURL("image/png");
+  }
+  return url;
+}
+function pickLogoFile() {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/png,image/jpeg,image/webp,image/gif";
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) { toast("That image is too large (max 15 MB).", "error"); return; }
+    try { logoModal(await loadImageFile(file)); } catch (err) { toast(errMsg(err), "error"); }
+  };
+  input.click();
+}
+function logoModal(img) {
+  let opts = { removeWhite: true, tolerance: 40 }, url = "";
+  const redraw = () => {
+    try { url = processLogo(img, opts); } catch (err) { url = ""; toast(errMsg(err), "error"); }
+    const box = $("#logo-prev");
+    if (box) box.innerHTML = url ? `<div class="checker"><img src="${url}" alt="Logo on transparent"></div><div class="blue"><img src="${url}" alt="Logo on the app colour"></div>` : `<div class="checker">—</div><div class="blue"></div>`;
+    const info = $("#logo-info");
+    if (info && url) info.textContent = `${Math.round(url.length * 0.75 / 1024)} KB · the checkered area will be transparent`;
+  };
+  openModal({
+    title: "Club logo",
+    body: `<div class="logo-prev" id="logo-prev"></div>
+      <div class="small muted" id="logo-info" style="margin-top:-4px"></div>
+      <label class="check"><input type="checkbox" id="logo-white" checked> Remove the white background around the logo</label>
+      <label class="f" id="logo-tol-wrap">Background sensitivity<input type="range" id="logo-tol" min="5" max="120" value="40"></label>
+      <p class="small muted" style="margin:0">White areas <b>inside</b> the logo are kept. Only white that touches the edge of the picture is removed. Move the slider to the right if some white is left around the logo, to the left if parts of the logo disappear.</p>`,
+    submitLabel: "Save logo",
+    onSubmit: async () => {
+      if (!url) throw new Error("There is no logo to save.");
+      const batch = writeBatch(db);
+      batch.set(doc(db, "settings", "logo"), { dataUrl: url, updatedAt: serverTimestamp(), updatedBy: S.user.uid });
+      log(batch, "Changed club logo", { label: `${Math.round(url.length * 0.75 / 1024)} KB` });
+      await batch.commit();
+      toast("Logo saved");
+    }
+  });
+  redraw();
+  $("#logo-white")?.addEventListener("change", (e) => { opts.removeWhite = e.target.checked; $("#logo-tol-wrap").hidden = !e.target.checked; redraw(); });
+  let t = null;
+  $("#logo-tol")?.addEventListener("input", (e) => { opts.tolerance = Number(e.target.value); clearTimeout(t); t = setTimeout(redraw, 120); });
+}
+Object.assign(ACTIONS, {
+  "logo-upload": () => pickLogoFile(),
+  "logo-remove": () => confirmRun("Remove the club logo? The basketball icon will be used again.", async () => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, "settings", "logo"), { dataUrl: null, updatedAt: serverTimestamp(), updatedBy: S.user.uid });  // rules do not allow deleting settings docs
+    log(batch, "Removed club logo", {});
+    await batch.commit();
+    toast("Logo removed");
+  })
 });
 
 /* =========================================================

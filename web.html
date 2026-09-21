@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1d4ed8">
+<meta name="theme-color" content="#3c3a77">
 <title>Basketball club</title>
 <meta name="description" content="Schedule, results, standings and news from the club.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%231d4ed8'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='white' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%233c3a77'/%3E%3Cpath d='M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42' stroke='white' stroke-width='3' fill='none'/%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#f5f8fd; --surface:#fff; --surface-2:#eef3fa; --text:#0f1b2d; --muted:#5b6b80; --line:#dce4ef;
-  --accent:#1d4ed8; --accent-dark:#163fae; --accent-soft:#e6eeff; --ok:#1f7a4a; --ok-soft:#e2f4ea; --bad:#b3261e; --bad-soft:#fbe4e2;
+  --accent:#3c3a77; --accent-dark:#2d2b5e; --accent-soft:#ebeaf6; --ok:#1f7a4a; --ok-soft:#e2f4ea; --bad:#b3261e; --bad-soft:#fbe4e2;
   --warn:#9a5b00; --warn-soft:#fdf1dc; --radius:16px; --shadow:0 1px 2px rgba(15,27,45,.05),0 8px 24px rgba(15,27,45,.06);
   color-scheme:light;
 }
@@ -27,6 +27,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
 .top .wrap{display:flex;align-items:center;gap:16px;height:64px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;text-decoration:none;color:var(--text);min-width:0}
+.brand .logo{height:44px;width:auto;max-width:60px;object-fit:contain;flex:none;border-radius:4px}
 .brand span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .menu{display:flex;gap:4px;margin-left:auto}
 .menu a{padding:8px 12px;border-radius:10px;text-decoration:none;color:var(--muted);font-weight:600;font-size:15px}
@@ -41,10 +42,11 @@ button{font:inherit;color:inherit;cursor:pointer}
 @media (max-width:820px){ .menu{display:none} .top .btn.primary{margin-left:auto} }
 
 /* hero */
-.hero{position:relative;color:#fff;background:linear-gradient(135deg,#1d4ed8 0%,#163fae 55%,#0f2c7d 100%);overflow:hidden}
+.hero{position:relative;color:#fff;background:linear-gradient(135deg,#3c3a77 0%,#2d2b5e 55%,#1f1d45 100%);overflow:hidden}
 .hero.photo{background-size:cover;background-position:center}
-.hero.photo::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(15,44,125,.88),rgba(29,78,216,.55))}
+.hero.photo::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(31,29,69,.88),rgba(60,58,119,.55))}
 .hero .wrap{position:relative;padding:64px 16px 72px;display:grid;grid-template-columns:1.3fr 1fr;gap:32px;align-items:center}
+.hero-logo{display:block;height:120px;width:auto;max-width:100%;margin-bottom:18px;border-radius:8px}
 .hero h1{font-size:clamp(32px,5vw,52px);font-weight:800}
 .hero p{font-size:18px;color:rgba(255,255,255,.85);margin:14px 0 26px;max-width:34em}
 .hero .ctas{display:flex;gap:10px;flex-wrap:wrap}
@@ -164,7 +166,7 @@ const firebaseConfig = {
 };
 const db = getFirestore(initializeApp(firebaseConfig));
 
-const TEAM_COLORS = ["#1d4ed8", "#e8590c", "#2f9e44", "#ae3ec9", "#0c8599", "#e03131", "#f08c00", "#5f3dc4", "#c2255c", "#495057"];
+const TEAM_COLORS = ["#3c3a77", "#e8590c", "#2f9e44", "#ae3ec9", "#0c8599", "#e03131", "#f08c00", "#5f3dc4", "#c2255c", "#495057"];
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const safeUrl = (u) => (/^https:\/\//i.test(String(u || "")) ? String(u) : "");
@@ -179,16 +181,21 @@ const evKey = (e) => `${e.date} ${e.startTime || "00:00"}`;
 const hasResult = (e) => e.scoreFor !== null && e.scoreFor !== undefined && e.scoreAgainst !== null && e.scoreAgainst !== undefined;
 const mapUrl = (e) => { const q = [e.venueName, e.venueAddress].filter(Boolean).join(", "); return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : ""; };
 
-const BALL = (size, color = "#1d4ed8", line = "#fff") => `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="${color}"/><path d="M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42" stroke="${line}" stroke-width="3" fill="none"/></svg>`;
+const BALL = (size, color = "#3c3a77", line = "#fff") => `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="${color}"/><path d="M2 32h60M32 2v60M11 11c12 10 12 32 0 42M53 11c-12 10-12 32 0 42" stroke="${line}" stroke-width="3" fill="none"/></svg>`;
 
 const WIN_FROM = isoAdd(mondayOf(todayISO()), -120), WIN_TO = isoAdd(mondayOf(todayISO()), 190);
 const S = {
-  site: null, teams: [], events: new Map(), extra: new Map(), standings: [], news: [],
+  site: null, logo: null, teams: [], events: new Map(), extra: new Map(), standings: [], news: [],
   loaded: { site: false, events: false }, error: null,
   week: mondayOf(todayISO()), team: "all", type: "all", openNews: new Set()
 };
 
 function fail(err) { console.warn(err); S.error = err; render(); }
+onSnapshot(doc(db, "settings", "logo"), (s) => {
+  S.logo = s.exists() ? s.data().dataUrl || null : null;
+  const link = document.querySelector('link[rel="icon"]'); if (link && S.logo) link.href = S.logo;
+  render();
+}, (err) => console.warn("[logo]", err.code));
 onSnapshot(doc(db, "public_site", "main"), (s) => { S.site = s.exists() ? s.data() : {}; S.loaded.site = true; render(); }, fail);
 onSnapshot(collection(db, "public_teams"), (s) => { S.teams = s.docs.map((d) => ({ id: d.id, ...d.data() })); render(); }, fail);
 onSnapshot(query(collection(db, "public_events"), where("date", ">=", WIN_FROM), where("date", "<=", WIN_TO)), (s) => {
@@ -244,7 +251,7 @@ function appUrl() { return safeUrl(S.site?.appUrl) || new URL("./", location.hre
 
 function viewHeader() {
   return `<header class="top"><div class="wrap">
-    <a class="brand" href="#top">${BALL(34)}<span>${esc(clubName())}</span></a>
+    <a class="brand" href="#top">${S.logo ? `<img class="logo" src="${S.logo}" alt="">` : BALL(34)}<span>${esc(clubName())}</span></a>
     <nav class="menu"><a href="#schedule">Schedule</a><a href="#games">Games</a>${S.standings.some((x) => x.current) ? `<a href="#standings">Standings</a>` : ""}${S.news.length ? `<a href="#news">News</a>` : ""}<a href="#about">About</a></nav>
     <a class="btn primary sm" href="${esc(appUrl())}">Team app</a>
   </div></header>`;
@@ -254,9 +261,9 @@ function viewHero() {
   const next = upcomingGames()[0];
   const img = safeUrl(site.heroImage);
   return `<div class="hero ${img ? "photo" : ""}" id="top" ${img ? `style="background-image:url('${esc(img)}')"` : ""}>
-    <div class="deco">${BALL(420, "#fff", "#1d4ed8")}</div>
+    ${S.logo ? "" : `<div class="deco">${BALL(420, "#fff", "#3c3a77")}</div>`}
     <div class="wrap">
-      <div><h1>Welcome to ${esc(clubName())}</h1>
+      <div>${S.logo ? `<img class="hero-logo" src="${S.logo}" alt="${esc(clubName())} logo">` : ""}<h1>Welcome to ${esc(clubName())}</h1>
         <p>${esc(site.tagline || "Practices, games, results and news from the club — always up to date.")}</p>
         <div class="ctas"><a class="btn light" href="#schedule">This week's schedule</a><a class="btn ghost-w" href="${esc(appUrl())}">Players &amp; coaches: open the team app</a></div></div>
       ${next ? `<div class="next"><div class="lbl">Next game</div>
