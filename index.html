@@ -250,7 +250,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.15";
+const VERSION = "v-0.16";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -3480,8 +3480,8 @@ function playViewerView(p, manage) {
     ${p.description ? `<p class="small" style="white-space:pre-wrap;margin:8px 0 0">${esc(p.description)}</p>` : ""}
     <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="play-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="court-wrap"><svg class="court" id="pv-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
-      <g id="pv-paths" class="paths" ${v.paths === false ? 'style="display:none"' : ""}>${anim.playing ? "" : pathsSvg(st, steps[v.step + 1], side)}</g>
-      <g id="pv-marks">${anim.playing ? "" : marksSvg(st, false)}</g>
+      <g id="pv-paths" class="paths" ${v.paths === false ? 'style="display:none"' : ""}>${pathsSvg(st, steps[v.step + 1], side)}</g>
+      <g id="pv-marks" ${v.paths === false ? 'style="display:none"' : ""}>${marksSvg(st, false)}</g>
       <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pv-")).join("")}</g>
       <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pv-")).join("")}</g>
       ${ballSvg(st.ball >= 0 ? ballAt(st.o[st.ball]) : st.shot ? RIM : { x: -20, y: -20 }, "pv-ball")}</svg></div>
@@ -3492,7 +3492,7 @@ function playViewerView(p, manage) {
       <button class="iconbtn" data-act="play-step" data-d="1" aria-label="Next step">▶</button>
       <span class="small muted" id="pv-label" style="margin-left:auto">Step ${v.step + 1} / ${steps.length}</span></div>
     <div class="dots">${steps.map((_, i) => `<button class="dot ${i === v.step ? "on" : ""}" data-act="play-goto" data-i="${i}" aria-label="Step ${i + 1}"></button>`).join("")}</div>
-    <label class="check small"><input type="checkbox" data-change="play-paths" ${v.paths === false ? "" : "checked"}> Show the movement of the next step</label>
+    <label class="check small"><input type="checkbox" data-change="play-paths" ${v.paths === false ? "" : "checked"}> Show movement lines (screens, passes, dribbles…) — also while playing</label>
     <div class="card small" id="pv-note" style="margin-top:8px;${st.note ? "" : "display:none"}">${esc(st.note || "")}</div>
     ${legendBlock(false)}
     ${vid ? `<div class="section-title">Video</div><div class="video"><iframe src="${esc(vid)}" title="Video" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
@@ -3527,6 +3527,13 @@ function applyFrame(p, i, t) {
   }
   return true;
 }
+// lines of the movement from step i to i+1 (+ drawings of step i), kept on screen while it plays
+function drawStepLines(p, i) {
+  const steps = p.steps || [], side = S.playView?.side || "both";
+  const g = document.getElementById("pv-paths"), m = document.getElementById("pv-marks");
+  if (g) g.innerHTML = pathsSvg(steps[i], steps[i + 1], side);
+  if (m) m.innerHTML = marksSvg(steps[i], false);
+}
 function currentViewedPlay() { return S.playView ? S.playView.draft || playById(S.playView.id) : null; }
 function tickAnim(now) {
   const p = currentViewedPlay();
@@ -3542,6 +3549,7 @@ function tickAnim(now) {
     const note = document.getElementById("pv-note"), n = steps[S.playView.step]?.note || "";
     if (note) { note.textContent = n; note.style.display = n ? "" : "none"; }
     document.querySelectorAll(".dots .dot").forEach((d, i) => d.classList.toggle("on", i === S.playView.step));
+    drawStepLines(p, S.playView.step);
     if (S.playView.step >= steps.length - 1) { applyFrame(p, S.playView.step, 0); stopAnim(); render(); return; }
   }
   if (!applyFrame(p, S.playView.step, anim.t)) { stopAnim(); return; }
@@ -3552,7 +3560,6 @@ function startAnim() {
   if (!p || (p.steps || []).length < 2) { toast("This play has only one step."); return; }
   if (S.playView.step >= p.steps.length - 1) S.playView.step = 0;
   anim.playing = true; anim.t = 0; anim.hold = 150; anim.last = 0;
-  const mk = document.getElementById("pv-marks"); if (mk) mk.innerHTML = "";
   render();
   anim.raf = requestAnimationFrame(tickAnim);
 }
