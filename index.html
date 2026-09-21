@@ -234,7 +234,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.12";
+const VERSION = "v-0.12.1";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -625,7 +625,9 @@ function render() {
   requestAnimationFrame(() => { renderQueued = false; renderNow(); });
 }
 function renderNow() {
-  if (drag) return;   // never rebuild the court while a player is being dragged
+  // never rebuild the court while a player is being dragged (but never get stuck if the browser lost the "finger up")
+  if (drag && Date.now() - drag.last < 4000) return;
+  drag = null;
   document.title = appName();
   const root = $("#app");
   const active = document.activeElement;
@@ -3452,12 +3454,13 @@ document.addEventListener("pointerdown", (ev) => {
   const svg = document.getElementById("pe-court");
   const kind = tok.dataset.tok[0], i = Number(tok.dataset.tok.slice(1));
   const start = svgPoint(svg, ev), p0 = { ...S.playEdit.steps[S.playEdit.cur][kind][i] };
-  drag = { tok, svg, kind, i, start, p0, moved: false, id: ev.pointerId };
+  drag = { tok, svg, kind, i, start, p0, moved: false, id: ev.pointerId, last: Date.now() };
   try { tok.setPointerCapture(ev.pointerId); } catch (_) {}
   ev.preventDefault();
 });
 document.addEventListener("pointermove", (ev) => {
   if (!drag || ev.pointerId !== drag.id) return;
+  drag.last = Date.now();
   const p = svgPoint(drag.svg, ev);
   const q = clampPos({ x: drag.p0.x + p.x - drag.start.x, y: drag.p0.y + p.y - drag.start.y });
   if (Math.hypot(q.x - drag.p0.x, q.y - drag.p0.y) > 1.5) drag.moved = true;
@@ -3468,7 +3471,7 @@ document.addEventListener("pointermove", (ev) => {
   ev.preventDefault();
 });
 function endDrag(ev) {
-  if (!drag || (ev && ev.pointerId !== drag.id)) return;
+  if (!drag || (ev && ev.pointerId !== undefined && ev.pointerId !== drag.id)) return;
   const d = drag; drag = null;
   const st = S.playEdit?.steps[S.playEdit.cur];
   if (!st) return;
@@ -3478,6 +3481,9 @@ function endDrag(ev) {
 }
 document.addEventListener("pointerup", endDrag);
 document.addEventListener("pointercancel", endDrag);
+document.addEventListener("lostpointercapture", endDrag, true);
+["mouseup", "touchend", "touchcancel"].forEach((t) => document.addEventListener(t, () => { if (drag) endDrag(); }, true));
+window.addEventListener("blur", () => { if (drag) endDrag(); });
 
 Object.assign(ACTIONS, {
   "play-new": (el) => openPlayEditor(el.dataset.team, null),
@@ -3524,9 +3530,10 @@ Object.assign(ACTIONS, {
   "pe-step-go": (el) => { S.playEdit.cur = Number(el.dataset.i); render(); },
   "pe-step-add": () => {
     const pe = S.playEdit;
-    if (pe.steps.length >= 30) { toast("A play can have up to 30 steps.", "error"); return; }
+    if (pe.steps.length >= 200) { toast("A play can have up to 200 steps.", "error"); return; }
     pe.steps.splice(pe.cur + 1, 0, copyStep(pe.steps[pe.cur]));
-    pe.cur++; pe.dirty = true; render();
+    pe.cur++; pe.dirty = true; drag = null; render();
+    setTimeout(() => document.querySelector(".stepbtn.on")?.scrollIntoView({ block: "nearest", inline: "nearest" }), 50);
   },
   "pe-step-del": () => {
     const pe = S.playEdit;
@@ -3884,6 +3891,7 @@ Object.assign(ACTIONS, { "website-edit": () => websiteModal() });
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act]");
   if (!el) return;
+  if (drag && !el.closest("#pe-court")) drag = null;
   const fn = ACTIONS[el.dataset.act];
   if (!fn) return;
   e.preventDefault();
