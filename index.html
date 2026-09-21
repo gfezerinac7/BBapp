@@ -209,6 +209,11 @@ table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--
 .legend-grid div{display:flex;align-items:center;gap:8px;font-size:13px}
 .legend-grid svg{flex:none;background:#f3e3c4;border-radius:4px}
 .tools-card{margin-top:10px;padding:10px 12px}
+.court.drawing{cursor:crosshair}
+.court.drawing .tok{pointer-events:none}
+.mark-hit{stroke:transparent;stroke-width:5;fill:none}
+#pe-marks.erasing .mark:hover path{stroke-opacity:.35}
+.mode-seg button{flex:1}
 .tool-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .seg.tools{flex-wrap:wrap;gap:4px}
 .seg.tools button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:13px;min-width:84px}
@@ -245,7 +250,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.13";
+const VERSION = "v-0.14";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -287,6 +292,7 @@ const S = {
 if (S.pendingInvite) S.authMode = "join";
 
 let drag = null;   // playbook editor: token being dragged
+let sketch = null; // playbook editor: stroke being drawn
 let meUnsub = null, memberUnsub = null, memberListenId = null, memberRetries = 0;
 let dataSubs = {}, dataKey = "";
 
@@ -638,7 +644,8 @@ function render() {
 function renderNow() {
   // never rebuild the court while a player is being dragged (but never get stuck if the browser lost the "finger up")
   if (drag && Date.now() - drag.last < 4000) return;
-  drag = null;
+  if (sketch && Date.now() - sketch.last < 4000) return;
+  drag = null; sketch = null;
   document.title = appName();
   const root = $("#app");
   const active = document.activeElement;
@@ -3197,7 +3204,7 @@ function defaultStep() {
   const d = o.map((p) => clampPos(lerpP(p, BASKET, 0.22)));
   return { o, d, ball: 0, note: "" };
 }
-const copyStep = (s) => ({ o: s.o.map((p) => ({ ...p })), d: s.d.map((p) => ({ ...p })), ball: s.ball ?? -1, note: "", acts: {}, curves: {}, bx: "pass", shot: false });
+const copyStep = (s) => ({ o: s.o.map((p) => ({ ...p })), d: s.d.map((p) => ({ ...p })), ball: s.ball ?? -1, note: "", acts: {}, curves: {}, bx: "pass", shot: false, marks: [] });
 // how a player gets to this step: cut (default) · dribble · screen ; how the ball arrives: pass · handoff ; shot = ball goes to the rim
 const actOf = (st, k) => (st.acts && st.acts[k]) || "cut";
 const bendOf = (st, k) => Number((st.curves && st.curves[k]) || 0);
@@ -3314,6 +3321,67 @@ function legendSvg(kind) {
 }
 const LEGEND = [["o", "Attacker (1–5)"], ["d", "Defender (X1–X5)"], ["ball", "Ball"], ["cut", "Cut / move"], ["curve", "Curved move"], ["dribble", "Dribble"],
   ["pass", "Pass"], ["screen", "Screen"], ["handoff", "Handoff"], ["shot", "Shot"], ["defmove", "Defender moves"]];
+/* ---------- drawings: symbols the coach draws freely on a step ----------
+   A drawing belongs to the step it is drawn on and shows what happens next from those positions. */
+const MARK_TYPES = ["cut", "dribble", "pass", "screen", "handoff", "shot"];
+function smoothPts(pts) {                                   // Chaikin smoothing, keeps both ends
+  let a = pts;
+  for (let k = 0; k < 2 && a.length > 2; k++) {
+    const out = [a[0]];
+    for (let i = 0; i < a.length - 1; i++) {
+      const p = a[i], q = a[i + 1];
+      out.push({ x: p.x * 0.75 + q.x * 0.25, y: p.y * 0.75 + q.y * 0.25 }, { x: p.x * 0.25 + q.x * 0.75, y: p.y * 0.25 + q.y * 0.75 });
+    }
+    out.push(a[a.length - 1]); a = out;
+  }
+  return a;
+}
+function simplifyPts(pts, eps = 0.9) {                      // Ramer–Douglas–Peucker
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts[pts.length - 1]];
+  let idx = 0, best = 0;
+  const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.abs(dy * pts[i].x - dx * pts[i].y + b.x * a.y - b.y * a.x) / L;
+    if (d > best) { best = d; idx = i; }
+  }
+  if (best <= eps) return [a, b];
+  return [...simplifyPts(pts.slice(0, idx + 1), eps).slice(0, -1), ...simplifyPts(pts.slice(idx), eps)];
+}
+function offsetPts(pts, d) {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: p.x - (b.y - a.y) / l * d, y: p.y + (b.x - a.x) / l * d };
+  });
+}
+function markSvg(m, idx) {
+  const pts = smoothPts(m.p || []);
+  if (pts.length < 2) return "";
+  const ball = ["pass", "handoff", "shot"].includes(m.t);
+  const cls = ball ? "mv-b" : m.team === "d" ? "mv-d" : "mv-o", mk = ball ? "ah-b" : m.team === "d" ? "ah-d" : "ah-o";
+  const end = pts[pts.length - 1], tg = tangent(pts);
+  let out = "";
+  switch (m.t) {
+    case "dribble": out = `<path d="${ptsD(zigzagPts(pts))}" class="${cls} solid" marker-end="url(#${mk})"/>`; break;
+    case "pass": out = `<path d="${ptsD(pts)}" class="${cls}" marker-end="url(#${mk})"/>`; break;
+    case "screen": {
+      const nx = -tg.uy * 4.2, ny = tg.ux * 4.2;
+      out = `<path d="${ptsD(pts)}" class="${cls} solid"/><line x1="${end.x - nx}" y1="${end.y - ny}" x2="${end.x + nx}" y2="${end.y + ny}" class="${cls} solid bar"/>`; break;
+    }
+    case "handoff": {
+      const nx = -tg.uy * 3, ny = tg.ux * 3, ux = tg.ux * 1.2, uy = tg.uy * 1.2;
+      out = `<path d="${ptsD(pts)}" class="${cls} solid"/>
+        <line x1="${end.x - ux - nx}" y1="${end.y - uy - ny}" x2="${end.x - ux + nx}" y2="${end.y - uy + ny}" class="${cls} solid bar"/>
+        <line x1="${end.x + ux - nx}" y1="${end.y + uy - ny}" x2="${end.x + ux + nx}" y2="${end.y + uy + ny}" class="${cls} solid bar"/>`; break;
+    }
+    case "shot": out = `<path d="${ptsD(offsetPts(pts, 0.9))}" class="${cls} solid"/><path d="${ptsD(offsetPts(pts, -0.9))}" class="${cls} solid" marker-end="url(#${mk})"/>`; break;
+    default: out = `<path d="${ptsD(pts)}" class="${cls} solid" marker-end="url(#${mk})"/>`;
+  }
+  const hit = idx === undefined ? "" : `<path d="${ptsD(pts)}" class="mark-hit" data-mark="${idx}"/>`;
+  return `<g class="mark ${m.team === "d" ? "side-d" : "side-o"}">${out}${hit}</g>`;
+}
+const marksSvg = (st, withHit) => (st?.marks || []).map((m, i) => markSvg(m, withHit ? i : undefined)).join("");
+
 function legendBlock(open) {
   return `<details class="legend" ${open ? "open" : ""}><summary>Legend</summary><div class="legend-grid">${LEGEND.map(([k, l]) => `<div>${legendSvg(k)}<span>${l}</span></div>`).join("")}</div></details>`;
 }
@@ -3411,6 +3479,7 @@ function playViewerView(p, manage) {
     <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="play-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="court-wrap"><svg class="court" id="pv-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
       <g id="pv-paths" class="paths" ${v.paths === false ? 'style="display:none"' : ""}>${anim.playing ? "" : pathsSvg(st, steps[v.step + 1], side)}</g>
+      <g id="pv-marks">${anim.playing ? "" : marksSvg(st, false)}</g>
       <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pv-")).join("")}</g>
       <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pv-")).join("")}</g>
       ${ballSvg(st.ball >= 0 ? ballAt(st.o[st.ball]) : st.shot ? RIM : { x: -20, y: -20 }, "pv-ball")}</svg></div>
@@ -3481,6 +3550,7 @@ function startAnim() {
   if (!p || (p.steps || []).length < 2) { toast("This play has only one step."); return; }
   if (S.playView.step >= p.steps.length - 1) S.playView.step = 0;
   anim.playing = true; anim.t = 0; anim.hold = 150; anim.last = 0;
+  const mk = document.getElementById("pv-marks"); if (mk) mk.innerHTML = "";
   render();
   anim.raf = requestAnimationFrame(tickAnim);
 }
@@ -3491,9 +3561,22 @@ function openPlayEditor(teamId, p) {
   S.playView = null;
   S.playEdit = p
     ? { id: p.id, teamId: p.teamId, name: p.name || "", category: p.category || PLAY_CATEGORIES[0], description: p.description || "", videoUrl: p.videoUrl || "",
-        steps: (p.steps || [defaultStep()]).map((s) => ({ ...copyStep(s), note: s.note || "", acts: { ...(s.acts || {}) }, curves: { ...(s.curves || {}) }, bx: s.bx || "pass", shot: !!s.shot })), cur: 0, side: "both", dirty: false, sel: "" }
+        steps: (p.steps || [defaultStep()]).map((s) => ({ ...copyStep(s), note: s.note || "", acts: { ...(s.acts || {}) }, curves: { ...(s.curves || {}) }, marks: (s.marks || []).map((m) => ({ ...m, p: (m.p || []).map((q) => ({ ...q })) })), bx: s.bx || "pass", shot: !!s.shot })), cur: 0, side: "both", dirty: false, sel: "" }
     : { id: null, teamId, name: "", category: PLAY_CATEGORIES[0], description: "", videoUrl: "", steps: [defaultStep()], cur: 0, side: "both", dirty: false };
   render(); window.scrollTo(0, 0);
+}
+function drawTools(pe, st) {
+  const tool = pe.tool || "cut", team = pe.team || "o", n = (st.marks || []).length;
+  const tools = [["cut", "Cut"], ["dribble", "Dribble"], ["pass", "Pass"], ["screen", "Screen"], ["handoff", "Handoff"], ["shot", "Shot"]];
+  return `<div class="card tools-card">
+    <div class="small muted">Draw with your finger (or mouse) on the court. Drawings belong to this step and show what happens next.</div>
+    <div class="seg tools" style="margin-top:6px">${tools.map(([k, l]) => `<button data-act="pe-tool" data-v="${k}" class="${tool === k ? "on" : ""}">${legendSvg(k)}<span>${l}</span></button>`).join("")}
+      <button data-act="pe-tool" data-v="erase" class="${tool === "erase" ? "on" : ""}"><span style="font-size:18px">⌫</span><span>Eraser</span></button></div>
+    ${["cut", "dribble", "screen"].includes(tool) ? `<div class="row" style="margin-top:6px"><span class="small muted">Colour</span>
+      <div class="seg">${[["o", "Offense"], ["d", "Defense"]].map(([k, l]) => `<button data-act="pe-team" data-v="${k}" class="${team === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` : ""}
+    <div class="row" style="margin-top:8px"><span class="small muted">${plural(n, "drawing")} on this step</span><span style="flex:1"></span>
+      <button class="btn sm" data-act="pe-undo" ${n ? "" : "disabled"}>↶ Undo</button><button class="btn sm" data-act="pe-clear" ${n ? "" : "disabled"}>Clear</button></div>
+  </div>`;
 }
 function curveTool(prev, st, sel) {
   if (!prev) return "";
@@ -3535,14 +3618,17 @@ function playEditorView() {
     <label class="f">Name<input type="text" id="pe-name" data-pe="name" maxlength="60" value="${esc(pe.name)}" placeholder="Horns – flare"></label>
     <label class="f">Category<select id="pe-cat" data-pe="category">${PLAY_CATEGORIES.map((c) => `<option ${pe.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
     <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="pe-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
-    <div class="court-wrap"><svg class="court editing" id="pe-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
+    <div class="seg mode-seg" style="margin:0 0 8px">${[["move", "✋ Move players"], ["draw", "✏️ Draw"]].map(([k, l]) => `<button data-act="pe-mode" data-v="${k}" class="${(pe.mode || "move") === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="court-wrap"><svg class="court editing ${pe.mode === "draw" ? "drawing" : ""}" id="pe-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
       ${prev ? `<g class="ghosts">${side !== "defense" ? prev.o.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)" opacity=".18"/>`).join("") : ""}${side !== "offense" ? prev.d.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#c92a2a" opacity=".15"/>`).join("") : ""}</g>` : ""}
       <g class="paths">${prev ? pathsSvg(prev, st, side) : ""}</g>
+      <g id="pe-marks" class="${pe.mode === "draw" && pe.tool === "erase" ? "erasing" : ""}">${marksSvg(st, true)}</g>
+      <g id="pe-live"></g>
       ${selMark}
       <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pe-")).join("")}</g>
       <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pe-")).join("")}</g>
       ${st.ball >= 0 ? ballSvg(ballAt(st.o[st.ball]), "pe-ball") : st.shot ? ballSvg(RIM, "pe-ball") : ""}</svg></div>
-    <div class="card tools-card">${tools}</div>
+    ${pe.mode === "draw" ? drawTools(pe, st) : `<div class="card tools-card">${tools}</div>`}
     ${legendBlock(false)}
     <div class="section-title spread"><span>Step ${pe.cur + 1} of ${pe.steps.length}</span>
       <div class="row"><button class="btn sm" data-act="pe-step-del" ${pe.steps.length < 2 ? "disabled" : ""}>Delete step</button><button class="btn primary sm" data-act="pe-step-add">+ Next step</button></div></div>
@@ -3566,7 +3652,9 @@ async function savePlay() {
       Object.entries(s.acts || {}).forEach(([k, v]) => { if (/^o[0-4]$/.test(k) && ["dribble", "screen"].includes(v)) acts[k] = v; });
       const curves = {};
       Object.entries(s.curves || {}).forEach(([k, v]) => { const n = Math.round(Math.max(-1, Math.min(1, Number(v) || 0)) * 100) / 100; if (/^[od][0-4]$/.test(k) && n) curves[k] = n; });
-      return { o: s.o.map(clampPos), d: s.d.map(clampPos), ball: s.ball ?? -1, note: (s.note || "").trim(), acts, curves, bx: s.bx === "handoff" ? "handoff" : "pass", shot: !!s.shot };
+      const marks = (s.marks || []).filter((m) => MARK_TYPES.includes(m.t) && (m.p || []).length > 1).slice(0, 40)
+        .map((m) => ({ t: m.t, team: m.team === "d" ? "d" : "o", p: m.p.slice(0, 60).map((q) => ({ x: Math.round(q.x * 2) / 2, y: Math.round(q.y * 2) / 2 })) }));
+      return { o: s.o.map(clampPos), d: s.d.map(clampPos), ball: s.ball ?? -1, note: (s.note || "").trim(), acts, curves, marks, bx: s.bx === "handoff" ? "handoff" : "pass", shot: !!s.shot };
     }),
     updatedAt: serverTimestamp(), updatedBy: S.user.uid };
   const batch = writeBatch(db);
@@ -3621,6 +3709,14 @@ function svgPoint(svg, ev) {
   return pt.matrixTransform(svg.getScreenCTM().inverse());
 }
 document.addEventListener("pointerdown", (ev) => {
+  if (S.playEdit && S.playEdit.mode === "draw" && ev.target.closest && ev.target.closest("#pe-court")) {
+    const svg = document.getElementById("pe-court"), p = clampPos(svgPoint(svg, ev));
+    if ((S.playEdit.tool || "cut") === "erase") { eraseAt(p); ev.preventDefault(); return; }
+    sketch = { svg, id: ev.pointerId, pts: [p], last: Date.now() };
+    try { svg.setPointerCapture(ev.pointerId); } catch (_) {}
+    ev.preventDefault();
+    return;
+  }
   const tok = ev.target.closest && ev.target.closest("#pe-court [data-tok]");
   if (!tok || !S.playEdit) return;
   const svg = document.getElementById("pe-court");
@@ -3631,6 +3727,15 @@ document.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
 });
 document.addEventListener("pointermove", (ev) => {
+  if (sketch && ev.pointerId === sketch.id) {
+    const p = clampPos(svgPoint(sketch.svg, ev)), l = sketch.pts[sketch.pts.length - 1];
+    if (Math.hypot(p.x - l.x, p.y - l.y) >= 0.8) sketch.pts.push(p);
+    sketch.last = Date.now();
+    const live = document.getElementById("pe-live"), pe = S.playEdit;
+    if (live && sketch.pts.length > 1) live.innerHTML = markSvg({ t: pe.tool || "cut", team: pe.team || "o", p: sketch.pts });
+    ev.preventDefault();
+    return;
+  }
   if (!drag || ev.pointerId !== drag.id) return;
   drag.last = Date.now();
   const p = svgPoint(drag.svg, ev);
@@ -3642,7 +3747,29 @@ document.addEventListener("pointermove", (ev) => {
   if (drag.kind === "o" && st.ball === drag.i) { const b = document.getElementById("pe-ball"); const bp = ballAt(q); if (b) b.setAttribute("transform", `translate(${bp.x} ${bp.y})`); }
   ev.preventDefault();
 });
+function endSketch(ev) {
+  if (!sketch || (ev && ev.pointerId !== undefined && ev.pointerId !== sketch.id)) return false;
+  const sk = sketch; sketch = null;
+  const pe = S.playEdit;
+  if (!pe) return true;
+  const pts = simplifyPts(sk.pts, 0.6);
+  const len = sk.pts.reduce((a, p, i) => (i ? a + Math.hypot(p.x - sk.pts[i - 1].x, p.y - sk.pts[i - 1].y) : 0), 0);
+  if (len >= 4) {
+    const st = pe.steps[pe.cur];
+    st.marks = [...(st.marks || []), { t: pe.tool || "cut", team: ["pass", "handoff", "shot"].includes(pe.tool) ? "o" : pe.team || "o", p: pts.slice(0, 60).map((q) => ({ x: Math.round(q.x * 2) / 2, y: Math.round(q.y * 2) / 2 })) }];
+    pe.dirty = true;
+  }
+  render();
+  return true;
+}
+function eraseAt(p) {
+  const pe = S.playEdit, st = pe.steps[pe.cur], marks = st.marks || [];
+  let best = -1, bd = 4;
+  marks.forEach((m, i) => smoothPts(m.p).forEach((q) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } }));
+  if (best >= 0) { st.marks = marks.filter((_, i) => i !== best); pe.dirty = true; render(); }
+}
 function endDrag(ev) {
+  if (endSketch(ev)) return;
   if (!drag || (ev && ev.pointerId !== undefined && ev.pointerId !== drag.id)) return;
   const d = drag; drag = null;
   const st = S.playEdit?.steps[S.playEdit.cur];
@@ -3655,8 +3782,8 @@ function endDrag(ev) {
 document.addEventListener("pointerup", endDrag);
 document.addEventListener("pointercancel", endDrag);
 document.addEventListener("lostpointercapture", endDrag, true);
-["mouseup", "touchend", "touchcancel"].forEach((t) => document.addEventListener(t, () => { if (drag) endDrag(); }, true));
-window.addEventListener("blur", () => { if (drag) endDrag(); });
+["mouseup", "touchend", "touchcancel"].forEach((t) => document.addEventListener(t, () => { if (drag || sketch) endDrag(); }, true));
+window.addEventListener("blur", () => { if (drag || sketch) endDrag(); });
 
 Object.assign(ACTIONS, {
   "play-new": (el) => openPlayEditor(el.dataset.team, null),
@@ -3701,6 +3828,11 @@ Object.assign(ACTIONS, {
   "play-preview-close": () => { stopAnim(); S.playEdit = S.playEditHidden; S.playEditHidden = null; S.playView = null; render(); },
   "pe-side": (el) => { S.playEdit.side = el.dataset.side; render(); },
   "pe-sel": (el) => { S.playEdit.sel = el.dataset.tok || ""; render(); },
+  "pe-mode": (el) => { S.playEdit.mode = el.dataset.v; S.playEdit.sel = ""; render(); },
+  "pe-tool": (el) => { S.playEdit.tool = el.dataset.v; render(); },
+  "pe-team": (el) => { S.playEdit.team = el.dataset.v; render(); },
+  "pe-undo": () => { const st = S.playEdit.steps[S.playEdit.cur]; st.marks = (st.marks || []).slice(0, -1); S.playEdit.dirty = true; render(); },
+  "pe-clear": () => { const st = S.playEdit.steps[S.playEdit.cur]; if (window.confirm("Remove all drawings from this step?")) { st.marks = []; S.playEdit.dirty = true; render(); } },
   "pe-curve": (el) => { setBend(Number(el.dataset.v)); render(); },
   "pe-act": (el) => {
     const pe = S.playEdit, st = pe.steps[pe.cur];
