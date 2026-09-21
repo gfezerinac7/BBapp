@@ -200,8 +200,19 @@ table.box .calc{display:inline-block;min-width:34px;font-weight:700;color:var(--
 .court{display:block;width:100%;height:auto;border-radius:12px;box-shadow:var(--shadow);touch-action:none;user-select:none;-webkit-user-select:none}
 .court.editing .tok{cursor:grab}
 .court[data-side="offense"] .side-d,.court[data-side="defense"] .side-o{display:none}
-.court .mv-o,.court .mv-d,.court .mv-b{stroke-width:.9;stroke-dasharray:2.4 1.6;fill:none}
-.court .mv-o{stroke:var(--accent)} .court .mv-d{stroke:#c92a2a} .court .mv-b{stroke:#e8590c;stroke-dasharray:1 1.6}
+.mv-o,.mv-d,.mv-b{stroke-width:.9;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.mv-o{stroke:var(--accent)} .mv-d{stroke:#c92a2a} .mv-b{stroke:#e8590c;stroke-dasharray:2.2 1.6}
+.mv-o.solid,.mv-d.solid,.mv-b.solid{stroke-dasharray:none} .bar{stroke-width:1.5} .thin{stroke-width:.5;stroke-opacity:.6}
+.legend{margin:10px 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.legend summary{cursor:pointer;font-weight:700;font-size:14px}
+.legend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 12px;margin-top:8px}
+.legend-grid div{display:flex;align-items:center;gap:8px;font-size:13px}
+.legend-grid svg{flex:none;background:#f3e3c4;border-radius:4px}
+.tools-card{margin-top:10px;padding:10px 12px}
+.tool-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.seg.tools{flex-wrap:wrap;gap:4px}
+.seg.tools button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:13px;min-width:84px}
+.seg.tools svg{background:#f3e3c4;border-radius:4px}
 .play-ctrl{display:flex;align-items:center;gap:8px;margin:12px 0 6px}
 .iconbtn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:16px;display:grid;place-items:center;cursor:pointer;color:var(--text)}
 .dots{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
@@ -234,7 +245,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.12.1";
+const VERSION = "v-0.13";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -3186,7 +3197,11 @@ function defaultStep() {
   const d = o.map((p) => clampPos(lerpP(p, BASKET, 0.22)));
   return { o, d, ball: 0, note: "" };
 }
-const copyStep = (s) => ({ o: s.o.map((p) => ({ ...p })), d: s.d.map((p) => ({ ...p })), ball: s.ball ?? -1, note: "" });
+const copyStep = (s) => ({ o: s.o.map((p) => ({ ...p })), d: s.d.map((p) => ({ ...p })), ball: s.ball ?? -1, note: "", acts: {}, curves: {}, bx: "pass", shot: false });
+// how a player gets to this step: cut (default) · dribble · screen ; how the ball arrives: pass · handoff ; shot = ball goes to the rim
+const actOf = (st, k) => (st.acts && st.acts[k]) || "cut";
+const bendOf = (st, k) => Number((st.curves && st.curves[k]) || 0);
+const RIM = { x: 75, y: 15.75 };
 
 function courtLines() {
   const L = 'stroke="#8a6a3d" stroke-opacity=".75" stroke-width=".7" fill="none"';
@@ -3208,6 +3223,100 @@ const arrowDefs = `<defs>
   <marker id="ah-o" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker>
   <marker id="ah-d" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c92a2a"/></marker>
   <marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e8590c"/></marker></defs>`;
+/* ---------- standard play-diagram notation ----------
+   cut = solid line + arrow · dribble = zig-zag line + arrow · pass = dashed line + arrow
+   screen = solid line ending in a "T" bar · handoff = two short bars across the exchange
+   shot = double line towards the rim · attacker = number (circle = has the ball) · defender = X   */
+function segEnd(p, q, back) { const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1; return { x: q.x - dx / len * back, y: q.y - dy / len * back, ux: dx / len, uy: dy / len, len }; }
+// curved movement: quadratic curve whose middle is pushed sideways by bend × distance (bend −1 … 1)
+function ctrlPt(p, q, bend) { const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, dx = q.x - p.x, dy = q.y - p.y; return { x: mx - dy * bend * 0.5, y: my + dx * bend * 0.5 }; }
+function bezier(p, q, bend, t) {
+  if (!bend) return lerpP(p, q, t);
+  const c = ctrlPt(p, q, bend), u = 1 - t;
+  return { x: u * u * p.x + 2 * u * t * c.x + t * t * q.x, y: u * u * p.y + 2 * u * t * c.y + t * t * q.y };
+}
+// points along the path, cut off where it enters the token at the end
+function pathPts(p, q, bend, stop) {
+  const pts = [];
+  for (let k = 0; k <= 40; k++) pts.push(bezier(p, q, bend, k / 40));
+  while (pts.length > 2 && Math.hypot(pts[pts.length - 1].x - q.x, pts[pts.length - 1].y - q.y) < stop) pts.pop();
+  return pts;
+}
+const ptsD = (pts) => "M" + pts.map((a) => `${a.x.toFixed(1)} ${a.y.toFixed(1)}`).join(" L");
+function tangent(pts) { const a = pts[pts.length - 2], b = pts[pts.length - 1], l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { ux: (b.x - a.x) / l, uy: (b.y - a.y) / l }; }
+function zigzagPts(pts, amp = 1.7, wave = 4.2) {
+  const out = [pts[0]]; let acc = 0, side = 1, next = wave / 2;
+  const total = pts.reduce((s2, a, i) => (i ? s2 + Math.hypot(a.x - pts[i - 1].x, a.y - pts[i - 1].y) : 0), 0);
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], l = Math.hypot(b.x - a.x, b.y - a.y);
+    while (acc + l >= next && next < total - 3) {
+      const t = (next - acc) / l, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, nx = -(b.y - a.y) / l, ny = (b.x - a.x) / l;
+      out.push({ x: x + nx * amp * side, y: y + ny * amp * side }); side = -side; next += wave / 2;
+    }
+    acc += l;
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+function moveSvg(p, q, type, team, bend = 0) {
+  const len = Math.hypot(q.x - p.x, q.y - p.y);
+  const cls = team === "o" ? "mv-o" : "mv-d", mk = team === "o" ? "ah-o" : "ah-d";
+  if (type === "screen") {
+    if (len < 2.5) return "";
+    const pts = pathPts(p, q, bend, TOK_R + 0.6), e = pts[pts.length - 1], tg = tangent(pts), nx = -tg.uy * 4.2, ny = tg.ux * 4.2;
+    return `<path d="${ptsD(pts)}" class="${cls} solid"/><line x1="${e.x - nx}" y1="${e.y - ny}" x2="${e.x + nx}" y2="${e.y + ny}" class="${cls} solid bar"/>`;
+  }
+  if (len < 2.5) return "";
+  const pts = pathPts(p, q, bend, TOK_R + 0.8);
+  return `<path d="${ptsD(type === "dribble" ? zigzagPts(pts) : pts)}" class="${cls} solid" marker-end="url(#${mk})"/>`;
+}
+// a screen that doesn't move: bar on the side facing the ball (or the basket)
+function screenStill(p, st) {
+  const tgt = st.ball >= 0 ? st.o[st.ball] : RIM;
+  const q = Math.hypot(tgt.x - p.x, tgt.y - p.y) < 1 ? RIM : tgt;
+  const e = segEnd(q, p, -(TOK_R + 1.2));   // point just outside the token, towards the target
+  const ux = (q.x - p.x), uy = (q.y - p.y), l = Math.hypot(ux, uy) || 1;
+  const cx = p.x + ux / l * (TOK_R + 1.4), cy = p.y + uy / l * (TOK_R + 1.4), nx = -uy / l * 4.2, ny = ux / l * 4.2;
+  return `<line x1="${cx - nx}" y1="${cy - ny}" x2="${cx + nx}" y2="${cy + ny}" class="mv-o solid bar"/>`;
+}
+function ballMoveSvg(from, to, type) {
+  if (type === "shot") {
+    const e = segEnd(from, RIM, 3), nx = -e.uy * 0.9, ny = e.ux * 0.9;
+    return `<line x1="${from.x + nx}" y1="${from.y + ny}" x2="${e.x + nx}" y2="${e.y + ny}" class="mv-b solid"/><line x1="${from.x - nx}" y1="${from.y - ny}" x2="${e.x - nx}" y2="${e.y - ny}" class="mv-b solid" marker-end="url(#ah-b)"/>`;
+  }
+  const e = segEnd(from, to, TOK_R + 0.8);
+  if (type === "handoff") {
+    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2, nx = -e.uy * 3, ny = e.ux * 3, ux = e.ux * 1.1, uy = e.uy * 1.1;
+    return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" class="mv-b solid thin"/>
+      <line x1="${mx - ux - nx}" y1="${my - uy - ny}" x2="${mx - ux + nx}" y2="${my - uy + ny}" class="mv-b solid bar"/>
+      <line x1="${mx + ux - nx}" y1="${my + uy - ny}" x2="${mx + ux + nx}" y2="${my + uy + ny}" class="mv-b solid bar"/>`;
+  }
+  return `<line x1="${from.x}" y1="${from.y}" x2="${e.x}" y2="${e.y}" class="mv-b" marker-end="url(#ah-b)"/>`;
+}
+function legendSvg(kind) {
+  const w = 44, h = 14;
+  const box = (inner) => `<svg viewBox="0 0 ${w} ${h}" width="${w * 1.3}" height="${h * 1.3}" aria-hidden="true">${arrowDefs.replace(/id="ah-/g, `id="lg-${kind}-`)}${inner.replace(/#ah-/g, `#lg-${kind}-`)}</svg>`;
+  const P = { x: 3, y: 7 }, Q = { x: 41 + TOK_R + 0.8, y: 7 };
+  switch (kind) {
+    case "o": return box(`<g transform="translate(22 7) scale(1.15)"><circle r="${TOK_R}" fill="var(--accent)"/><text y="2.3" text-anchor="middle" font-size="6.4" font-weight="800" fill="#fff">1</text></g>`);
+    case "d": return box(`<g transform="translate(22 7) scale(1.15)"><circle r="${TOK_R}" fill="#fff" stroke="#c92a2a" stroke-width="1.3"/><text y="2.3" text-anchor="middle" font-size="6" font-weight="800" fill="#c92a2a">X1</text></g>`);
+    case "ball": return box(`<circle cx="22" cy="7" r="2.7" fill="#e8590c" stroke="#7a2e05" stroke-width=".5"/>`);
+    case "cut": return box(`<g class="lg">${moveSvg(P, Q, "cut", "o")}</g>`);
+    case "curve": return box(`<g class="lg">${moveSvg({ x: 3, y: 10 }, { x: 41 + TOK_R + 0.8, y: 10 }, "cut", "o", -0.45)}</g>`);
+    case "dribble": return box(`<g class="lg">${moveSvg(P, Q, "dribble", "o")}</g>`);
+    case "screen": return box(`<g class="lg">${moveSvg(P, { x: 38 + TOK_R, y: 7 }, "screen", "o")}</g>`);
+    case "pass": return box(`<g class="lg">${ballMoveSvg(P, Q, "pass")}</g>`);
+    case "handoff": return box(`<g class="lg">${ballMoveSvg(P, { x: 41, y: 7 }, "handoff")}</g>`);
+    case "shot": return box(`<g class="lg"><line x1="3" y1="6" x2="38" y2="6" class="mv-b solid"/><line x1="3" y1="8" x2="38" y2="8" class="mv-b solid" marker-end="url(#ah-b)"/></g>`);
+    case "defmove": return box(`<g class="lg">${moveSvg(P, Q, "cut", "d")}</g>`);
+  }
+  return "";
+}
+const LEGEND = [["o", "Attacker (1–5)"], ["d", "Defender (X1–X5)"], ["ball", "Ball"], ["cut", "Cut / move"], ["curve", "Curved move"], ["dribble", "Dribble"],
+  ["pass", "Pass"], ["screen", "Screen"], ["handoff", "Handoff"], ["shot", "Shot"], ["defmove", "Defender moves"]];
+function legendBlock(open) {
+  return `<details class="legend" ${open ? "open" : ""}><summary>Legend</summary><div class="legend-grid">${LEGEND.map(([k, l]) => `<div>${legendSvg(k)}<span>${l}</span></div>`).join("")}</div></details>`;
+}
 function tokenSvg(kind, i, p, extra = "") {
   const off = kind === "o";
   return `<g class="tok tok-${kind}" data-tok="${kind}${i}" id="${extra}${kind}${i}" transform="translate(${p.x} ${p.y})">
@@ -3223,15 +3332,14 @@ function ballSvg(p, id) {
 function pathsSvg(a, b, side) {
   if (!a || !b) return "";
   let out = "";
-  const line = (p, q, cls, marker) => {
-    const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy);
-    if (len < 2.5) return "";
-    const k = (len - TOK_R - 0.8) / len;           // stop at the token edge
-    return `<line x1="${p.x}" y1="${p.y}" x2="${p.x + dx * k}" y2="${p.y + dy * k}" class="${cls}" marker-end="url(#${marker})"/>`;
-  };
-  if (side !== "defense") a.o.forEach((p, i) => (out += line(p, b.o[i], "mv-o", "ah-o")));
-  if (side !== "offense") a.d.forEach((p, i) => (out += line(p, b.d[i], "mv-d", "ah-d")));
-  if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) out += line(b.o[a.ball], b.o[b.ball], "mv-b", "ah-b");
+  if (side !== "defense") a.o.forEach((p, i) => {
+    const type = actOf(b, "o" + i), moved = Math.hypot(b.o[i].x - p.x, b.o[i].y - p.y) >= 2.5;
+    out += type === "screen" && !moved ? screenStill(b.o[i], b) : moveSvg(p, b.o[i], type, "o", bendOf(b, "o" + i));
+  });
+  if (side !== "offense") a.d.forEach((p, i) => (out += moveSvg(p, b.d[i], "cut", "d", bendOf(b, "d" + i))));
+  if (b.shot && a.ball >= 0) out += ballMoveSvg(b.o[a.ball], RIM, "shot");
+  else if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) out += ballMoveSvg(b.o[a.ball], b.o[b.ball], b.bx === "handoff" ? "handoff" : "pass");
+  else if (a.shot && b.ball >= 0) out += ballMoveSvg(RIM, b.o[b.ball], "pass");   // rebound / outlet
   return out;
 }
 function videoEmbed(url) {
@@ -3305,7 +3413,7 @@ function playViewerView(p, manage) {
       <g id="pv-paths" class="paths" ${v.paths === false ? 'style="display:none"' : ""}>${anim.playing ? "" : pathsSvg(st, steps[v.step + 1], side)}</g>
       <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pv-")).join("")}</g>
       <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pv-")).join("")}</g>
-      ${ballSvg(st.ball >= 0 ? ballAt(st.o[st.ball]) : { x: -20, y: -20 }, "pv-ball")}</svg></div>
+      ${ballSvg(st.ball >= 0 ? ballAt(st.o[st.ball]) : st.shot ? RIM : { x: -20, y: -20 }, "pv-ball")}</svg></div>
     <div class="play-ctrl">
       <button class="iconbtn" data-act="play-step" data-d="-99" aria-label="First step">⏮</button>
       <button class="iconbtn" data-act="play-step" data-d="-1" aria-label="Previous step">◀</button>
@@ -3315,6 +3423,7 @@ function playViewerView(p, manage) {
     <div class="dots">${steps.map((_, i) => `<button class="dot ${i === v.step ? "on" : ""}" data-act="play-goto" data-i="${i}" aria-label="Step ${i + 1}"></button>`).join("")}</div>
     <label class="check small"><input type="checkbox" data-change="play-paths" ${v.paths === false ? "" : "checked"}> Show the movement of the next step</label>
     <div class="card small" id="pv-note" style="margin-top:8px;${st.note ? "" : "display:none"}">${esc(st.note || "")}</div>
+    ${legendBlock(false)}
     ${vid ? `<div class="section-title">Video</div><div class="video"><iframe src="${esc(vid)}" title="Video" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
       : p.videoUrl ? `<div class="section-title">Video</div><a class="btn block" href="${esc(p.videoUrl)}" target="_blank" rel="noopener">Open video ›</a>` : ""}
     ${manage && !draft ? `<div class="row" style="margin-top:20px"><button class="btn" data-act="play-copy" data-id="${p.id}">Copy to another team</button>
@@ -3326,12 +3435,21 @@ function applyFrame(p, i, t) {
   if (!svg) return false;
   const steps = p.steps || [], a = steps[i], b = steps[i + 1] || a, e = ease(t);
   if (!a) return false;
-  const pos = { o: a.o.map((q, k) => lerpP(q, b.o[k], e)), d: a.d.map((q, k) => lerpP(q, b.d[k], e)) };
+  const pos = { o: a.o.map((q, k) => bezier(q, b.o[k], bendOf(b, "o" + k), e)), d: a.d.map((q, k) => bezier(q, b.d[k], bendOf(b, "d" + k), e)) };
   ["o", "d"].forEach((kind) => pos[kind].forEach((q, k) => { const g = document.getElementById(`pv-${kind}${k}`); if (g) g.setAttribute("transform", `translate(${q.x} ${q.y})`); }));
   const ball = document.getElementById("pv-ball");
   if (ball) {
     let q = null;
-    if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) q = lerpP(ballAt(pos.o[a.ball]), ballAt(pos.o[b.ball]), ease(Math.min(1, t * 1.15)));
+    if (b.shot && a.ball >= 0) {                                   // shot: arc to the rim
+      const t2 = ease(Math.min(1, t * 1.2)), from = ballAt(pos.o[a.ball]);
+      q = lerpP(from, RIM, t2); q.y -= Math.sin(Math.PI * t2) * 14;
+    } else if (a.shot && b.ball >= 0) q = lerpP(RIM, ballAt(pos.o[b.ball]), e);   // rebound
+    else if (a.shot) q = RIM;
+    else if (a.ball >= 0 && b.ball >= 0 && a.ball !== b.ball) {
+      q = b.bx === "handoff"                                         // handoff: carried, then handed over
+        ? (t < 0.6 ? ballAt(pos.o[a.ball]) : lerpP(ballAt(pos.o[a.ball]), ballAt(pos.o[b.ball]), ease((t - 0.6) / 0.4)))
+        : lerpP(ballAt(pos.o[a.ball]), ballAt(pos.o[b.ball]), ease(Math.min(1, t * 1.15)));
+    }
     else if (b.ball >= 0 && (a.ball === b.ball || a.ball < 0)) q = ballAt(pos.o[b.ball]);
     else if (a.ball >= 0) q = t < 0.5 ? ballAt(pos.o[a.ball]) : null;
     ball.setAttribute("transform", q ? `translate(${q.x} ${q.y})` : "translate(-20 -20)");
@@ -3373,13 +3491,44 @@ function openPlayEditor(teamId, p) {
   S.playView = null;
   S.playEdit = p
     ? { id: p.id, teamId: p.teamId, name: p.name || "", category: p.category || PLAY_CATEGORIES[0], description: p.description || "", videoUrl: p.videoUrl || "",
-        steps: (p.steps || [defaultStep()]).map((s) => ({ ...copyStep(s), note: s.note || "" })), cur: 0, side: "both", dirty: false }
+        steps: (p.steps || [defaultStep()]).map((s) => ({ ...copyStep(s), note: s.note || "", acts: { ...(s.acts || {}) }, curves: { ...(s.curves || {}) }, bx: s.bx || "pass", shot: !!s.shot })), cur: 0, side: "both", dirty: false, sel: "" }
     : { id: null, teamId, name: "", category: PLAY_CATEGORIES[0], description: "", videoUrl: "", steps: [defaultStep()], cur: 0, side: "both", dirty: false };
   render(); window.scrollTo(0, 0);
 }
+function curveTool(prev, st, sel) {
+  if (!prev) return "";
+  const k = sel[0], i = Number(sel.slice(1)), a = prev[k][i], b = st[k][i];
+  if (Math.hypot(b.x - a.x, b.y - a.y) < 2.5) return `<div class="small muted" style="margin-top:8px">Curve: move the player first.</div>`;
+  const v = bendOf(st, sel);
+  return `<div class="small muted" style="margin-top:8px">Path</div>
+    <div class="seg tools">${[[-0.6, "↶ Curve left"], [0, "Straight"], [0.6, "Curve right ↷"]].map(([n, l]) => `<button data-act="pe-curve" data-v="${n}" class="${(n === 0 ? v === 0 : Math.sign(v) === Math.sign(n)) ? "on" : ""}"><span>${l}</span></button>`).join("")}</div>
+    <label class="f" style="margin-top:4px">How much<input type="range" id="pe-bend" data-bend min="-100" max="100" step="5" value="${Math.round(v * 100)}"></label>`;
+}
 function playEditorView() {
   const pe = S.playEdit, st = pe.steps[pe.cur], prev = pe.steps[pe.cur - 1];
-  const side = pe.side;
+  const side = pe.side, sel = pe.sel || "";
+  const selKind = sel[0], selI = Number(sel.slice(1));
+  const selMark = sel && (sel[0] === "o" ? side !== "defense" : side !== "offense")
+    ? `<circle cx="${st[selKind][selI].x}" cy="${st[selKind][selI].y}" r="${TOK_R + 2.2}" fill="none" stroke="#f59f00" stroke-width="1.3" stroke-dasharray="2 1.2"/>` : "";
+  let tools = `<div class="small muted">Tap a player to choose how they move in this step, pass them the ball, or shoot.</div>`;
+  if (selKind === "o") {
+    const act = actOf(st, sel), hasBall = st.ball === selI, prevHolder = prev ? prev.ball : -1;
+    tools = `<div class="tool-h"><b>Player ${selI + 1}</b> <button class="btn ghost sm" data-act="pe-sel" data-tok="">✕</button></div>
+      ${prev ? `<div class="small muted">How ${selI + 1} gets here</div>
+      <div class="seg tools">${[["cut", "Cut"], ["dribble", "Dribble"], ["screen", "Screen"]].map(([k, l]) => `<button data-act="pe-act" data-v="${k}" class="${act === k ? "on" : ""}">${legendSvg(k)}<span>${l}</span></button>`).join("")}</div>` : ""}
+      ${curveTool(prev, st, sel)}
+      <div class="small muted" style="margin-top:8px">Ball</div>
+      <div class="seg tools">${hasBall
+        ? `<button data-act="pe-ball" data-v="none"><span>Take the ball away</span></button>${prev && prevHolder >= 0 ? `<button data-act="pe-ball" data-v="shot" class="${st.shot ? "on" : ""}">${legendSvg("shot")}<span>Shoots</span></button>` : ""}`
+        : `${prev && prevHolder >= 0 && prevHolder !== selI
+            ? `<button data-act="pe-ball" data-v="pass" class="">${legendSvg("pass")}<span>Receives a pass</span></button><button data-act="pe-ball" data-v="handoff">${legendSvg("handoff")}<span>Handoff</span></button>`
+            : `<button data-act="pe-ball" data-v="give"><span>🏀 Has the ball</span></button>`}
+          ${st.shot && prevHolder === selI ? `<button data-act="pe-ball" data-v="unshot" class="on">${legendSvg("shot")}<span>Shoots</span></button>` : ""}`}</div>`;
+  } else if (selKind === "d") {
+    tools = `<div class="tool-h"><b>Defender X${selI + 1}</b> <button class="btn ghost sm" data-act="pe-sel" data-tok="">✕</button></div>
+      <div class="small muted">Drag X${selI + 1} to where they defend in this step. Their movement is drawn as a red arrow.</div>
+      ${curveTool(prev, st, sel)}`;
+  }
   return `<div class="spread"><button class="btn ghost sm" data-act="play-edit-cancel">‹ Cancel</button>
       <div class="row"><button class="btn sm" data-act="play-preview">▶ Preview</button><button class="btn primary sm" data-act="play-save">Save</button></div></div>
     <h2 style="margin-top:8px">${pe.id ? "Edit play" : "New play"}</h2>
@@ -3387,15 +3536,18 @@ function playEditorView() {
     <label class="f">Category<select id="pe-cat" data-pe="category">${PLAY_CATEGORIES.map((c) => `<option ${pe.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
     <div class="seg" style="margin:12px 0 8px">${[["offense", "Offense"], ["defense", "Defense"], ["both", "Both"]].map(([k, l]) => `<button data-act="pe-side" data-side="${k}" class="${side === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="court-wrap"><svg class="court editing" id="pe-court" viewBox="0 0 150 140" data-side="${side}">${arrowDefs}${courtLines()}
-      ${prev ? `<g class="ghosts">${side !== "defense" ? prev.o.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)" opacity=".18"/>`).join("") : ""}${side !== "offense" ? prev.d.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#c92a2a" opacity=".15"/>`).join("") : ""}</g>
-        <g class="paths">${pathsSvg(prev, st, side)}</g>` : ""}
+      ${prev ? `<g class="ghosts">${side !== "defense" ? prev.o.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="var(--accent)" opacity=".18"/>`).join("") : ""}${side !== "offense" ? prev.d.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="${TOK_R}" fill="#c92a2a" opacity=".15"/>`).join("") : ""}</g>` : ""}
+      <g class="paths">${prev ? pathsSvg(prev, st, side) : ""}</g>
+      ${selMark}
       <g class="side-d">${st.d.map((q, i) => tokenSvg("d", i, q, "pe-")).join("")}</g>
       <g class="side-o">${st.o.map((q, i) => tokenSvg("o", i, q, "pe-")).join("")}</g>
-      ${st.ball >= 0 ? ballSvg(ballAt(st.o[st.ball]), "pe-ball") : ""}</svg></div>
-    <p class="small muted" style="margin:6px 0 0">Drag the players to where they are at this step. <b>Tap an attacker</b> to give them the ball (tap again to take it away). ${prev ? "Faint circles and arrows show where they came from." : ""}</p>
+      ${st.ball >= 0 ? ballSvg(ballAt(st.o[st.ball]), "pe-ball") : st.shot ? ballSvg(RIM, "pe-ball") : ""}</svg></div>
+    <div class="card tools-card">${tools}</div>
+    ${legendBlock(false)}
     <div class="section-title spread"><span>Step ${pe.cur + 1} of ${pe.steps.length}</span>
       <div class="row"><button class="btn sm" data-act="pe-step-del" ${pe.steps.length < 2 ? "disabled" : ""}>Delete step</button><button class="btn primary sm" data-act="pe-step-add">+ Next step</button></div></div>
     <div class="steps-bar">${pe.steps.map((_, i) => `<button class="stepbtn ${i === pe.cur ? "on" : ""}" data-act="pe-step-go" data-i="${i}">${i + 1}</button>`).join("")}</div>
+    <p class="small muted" style="margin:0 0 6px">Each step shows how the players get there from the step before: drag them, then tap one to mark a dribble, a screen, a pass, a handoff or a shot.</p>
     <label class="f">Note for this step (optional)<textarea id="pe-note" data-pe-note rows="2" maxlength="300" placeholder="4 sets a screen for 1, 1 drives to the right elbow">${esc(st.note || "")}</textarea></label>
     <label class="f">Description (optional)<textarea id="pe-desc" data-pe="description" rows="3" maxlength="1500" placeholder="When to use it, key reads…">${esc(pe.description)}</textarea></label>
     <label class="f">Video link (optional)<input type="url" id="pe-video" data-pe="videoUrl" value="${esc(pe.videoUrl)}" placeholder="https://www.youtube.com/watch?v=…"></label>
@@ -3409,7 +3561,13 @@ async function savePlay() {
   const url = pe.videoUrl.trim();
   if (url && !/^https:\/\//i.test(url)) throw new Error("The video link must start with https://");
   const data = { teamId: pe.teamId, name: pe.name.trim(), category: pe.category, description: pe.description.trim(), videoUrl: url,
-    steps: pe.steps.map((s) => ({ o: s.o.map(clampPos), d: s.d.map(clampPos), ball: s.ball ?? -1, note: (s.note || "").trim() })),
+    steps: pe.steps.map((s) => {
+      const acts = {};
+      Object.entries(s.acts || {}).forEach(([k, v]) => { if (/^o[0-4]$/.test(k) && ["dribble", "screen"].includes(v)) acts[k] = v; });
+      const curves = {};
+      Object.entries(s.curves || {}).forEach(([k, v]) => { const n = Math.round(Math.max(-1, Math.min(1, Number(v) || 0)) * 100) / 100; if (/^[od][0-4]$/.test(k) && n) curves[k] = n; });
+      return { o: s.o.map(clampPos), d: s.d.map(clampPos), ball: s.ball ?? -1, note: (s.note || "").trim(), acts, curves, bx: s.bx === "handoff" ? "handoff" : "pass", shot: !!s.shot };
+    }),
     updatedAt: serverTimestamp(), updatedBy: S.user.uid };
   const batch = writeBatch(db);
   const ref = pe.id ? doc(db, "plays", pe.id) : doc(collection(db, "plays"));
@@ -3441,6 +3599,20 @@ function playCopyModal(p) {
   });
 }
 
+function setBend(v) {
+  const pe = S.playEdit, st = pe.steps[pe.cur];
+  st.curves = { ...(st.curves || {}) };
+  if (v) st.curves[pe.sel] = v; else delete st.curves[pe.sel];
+  pe.dirty = true;
+}
+// live preview while the slider moves (no full re-render, so the slider keeps working)
+document.addEventListener("input", (e) => {
+  if (!(e.target.dataset && "bend" in e.target.dataset) || !S.playEdit) return;
+  setBend(Number(e.target.value) / 100);
+  const pe = S.playEdit, g = document.querySelector("#pe-court .paths");
+  if (g) g.innerHTML = pathsSvg(pe.steps[pe.cur - 1], pe.steps[pe.cur], pe.side);
+});
+document.addEventListener("change", (e) => { if (e.target.dataset && "bend" in e.target.dataset && S.playEdit) render(); });
 function resetPlays() { stopAnim(); S.playView = null; S.playEdit = null; S.playEditHidden = null; }
 
 /* ---------- dragging in the editor ---------- */
@@ -3476,7 +3648,8 @@ function endDrag(ev) {
   const st = S.playEdit?.steps[S.playEdit.cur];
   if (!st) return;
   if (d.moved && d.q) { st[d.kind][d.i] = d.q; S.playEdit.dirty = true; }
-  else if (d.kind === "o") { st.ball = st.ball === d.i ? -1 : d.i; S.playEdit.dirty = true; }
+  else { S.playEdit.sel = S.playEdit.sel === d.kind + d.i ? "" : d.kind + d.i; }
+  if (d.moved) S.playEdit.sel = d.kind + d.i;
   render();
 }
 document.addEventListener("pointerup", endDrag);
@@ -3527,12 +3700,30 @@ Object.assign(ACTIONS, {
   },
   "play-preview-close": () => { stopAnim(); S.playEdit = S.playEditHidden; S.playEditHidden = null; S.playView = null; render(); },
   "pe-side": (el) => { S.playEdit.side = el.dataset.side; render(); },
-  "pe-step-go": (el) => { S.playEdit.cur = Number(el.dataset.i); render(); },
+  "pe-sel": (el) => { S.playEdit.sel = el.dataset.tok || ""; render(); },
+  "pe-curve": (el) => { setBend(Number(el.dataset.v)); render(); },
+  "pe-act": (el) => {
+    const pe = S.playEdit, st = pe.steps[pe.cur];
+    st.acts = { ...(st.acts || {}) };
+    if (el.dataset.v === "cut") delete st.acts[pe.sel]; else st.acts[pe.sel] = el.dataset.v;
+    pe.dirty = true; render();
+  },
+  "pe-ball": (el) => {
+    const pe = S.playEdit, st = pe.steps[pe.cur], i = Number(pe.sel.slice(1)), v = el.dataset.v;
+    const prevHolder = pe.cur > 0 ? pe.steps[pe.cur - 1].ball : -1;
+    if (v === "none") { st.ball = -1; st.shot = false; }
+    else if (v === "give") { st.ball = i; st.shot = false; st.bx = "pass"; }
+    else if (v === "pass" || v === "handoff") { st.ball = i; st.shot = false; st.bx = v; }
+    else if (v === "shot") { st.ball = -1; st.shot = true; }
+    else if (v === "unshot") { st.shot = false; st.ball = prevHolder; }
+    pe.dirty = true; render();
+  },
+  "pe-step-go": (el) => { S.playEdit.cur = Number(el.dataset.i); S.playEdit.sel = ""; render(); },
   "pe-step-add": () => {
     const pe = S.playEdit;
     if (pe.steps.length >= 200) { toast("A play can have up to 200 steps.", "error"); return; }
     pe.steps.splice(pe.cur + 1, 0, copyStep(pe.steps[pe.cur]));
-    pe.cur++; pe.dirty = true; drag = null; render();
+    pe.cur++; pe.dirty = true; pe.sel = ""; drag = null; render();
     setTimeout(() => document.querySelector(".stepbtn.on")?.scrollIntoView({ block: "nearest", inline: "nearest" }), 50);
   },
   "pe-step-del": () => {
