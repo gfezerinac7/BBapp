@@ -250,7 +250,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.16";
+const VERSION = "v-0.17";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -1308,12 +1308,45 @@ function inviteShowModal(code, data) {
     body: `<div class="notice">${esc(describeInvite(inv))}</div>
       <div class="code">${esc(code)}</div>
       <div class="linkbox">${esc(link)}</div>
+      <label class="f">Send to (email, optional)<input type="email" id="invite-to" placeholder="name@example.com" autocomplete="off"></label>
+      <button type="button" class="btn primary block" data-act="invite-email" data-code="${esc(code)}">✉️ Send by email with install guide</button>
       <div class="grid2">
         <button type="button" class="btn" data-act="copy" data-text="${esc(link)}">Copy link</button>
-        <button type="button" class="btn primary" data-act="share" data-text="${esc(text)}">Share…</button>
+        <button type="button" class="btn" data-act="share" data-text="${esc(text)}">Share…</button>
       </div>
-      <p class="small muted" style="margin:0">Valid until ${esc(fmtDate(inv.expiresAt))} · ${plural(inv.maxUses, "use")}.</p>`
+      <p class="small muted" style="margin:0">Valid until ${esc(fmtDate(inv.expiresAt))} · ${plural(inv.maxUses, "use")}.
+        The <a href="${esc(new URL("install-guide.pdf", location.href).href)}" target="_blank" rel="noopener">install guide (PDF)</a> explains how to join and put the app on the phone.</p>`
   });
+}
+// Invite email: on phones (and Safari on Mac) the share sheet can attach the install guide PDF;
+// elsewhere we open the email app with the guide as a link (browsers can't attach files to mailto).
+async function sendInviteEmail(code) {
+  const inv = byId(S.invites, code) || {};
+  const link = inviteLink(code), guide = new URL("install-guide.pdf", location.href).href;
+  const to = ($("#invite-to")?.value || "").trim();
+  const subject = `Your invite to ${appName()} – ${clubName()}`;
+  const body = [
+    `Hi${inv.memberName ? " " + inv.memberName.split(" ")[0] : ""},`, "",
+    `You're invited to ${appName()}, the team app of ${clubName()} (${describeInvite(inv)}).`, "",
+    `1. Open this link on your phone: ${link}`,
+    `   (or go to ${new URL("./", location.href).href} → "Join with code" and type ${code})`,
+    `2. Create your account with your email and a password.`,
+    `3. Put the app on your home screen and turn on notifications.`, "",
+    `The attached guide shows every step with pictures. You can also open it here: ${guide}`, "",
+    `The invite is personal and valid until ${fmtDate(inv.expiresAt)}.`, "",
+    `See you on the court!`, `${S.me?.name || clubName()}`
+  ].join("\n");
+  let file = null;
+  try {
+    const res = await fetch(guide, { cache: "force-cache" });
+    if (res.ok) file = new File([await res.blob()], `${appName()} - install guide.pdf`, { type: "application/pdf" });
+  } catch (_) {}
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ title: subject, text: body, files: [file] }); return; }
+    catch (err) { if (err && err.name === "AbortError") return; }
+  }
+  location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  toast("Your email app opens with the invite. The install guide is included as a link.");
 }
 function profileModal() {
   openModal({
@@ -1605,6 +1638,7 @@ const ACTIONS = {
     try { await navigator.clipboard.writeText(el.dataset.text); toast("Copied"); }
     catch (_) { window.prompt("Copy this:", el.dataset.text); }
   },
+  "invite-email": (el) => sendInviteEmail(el.dataset.code),
   share: async (el) => {
     if (navigator.share) { try { await navigator.share({ title: appName(), text: el.dataset.text }); } catch (_) {} }
     else { try { await navigator.clipboard.writeText(el.dataset.text); toast("Message copied"); } catch (_) { window.prompt("Copy this:", el.dataset.text); } }
