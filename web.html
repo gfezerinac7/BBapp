@@ -27,7 +27,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
 .top .wrap{display:flex;align-items:center;gap:16px;height:64px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;text-decoration:none;color:var(--text);min-width:0}
-.brand .logo{height:44px;width:auto;max-width:60px;object-fit:contain;flex:none;border-radius:4px}
+.brand .logo{height:44px;max-width:70px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.brand .logo img{height:100%;width:auto;max-width:100%;object-fit:contain;display:block}
+.brand .logo.badge{background:var(--accent);border-radius:10px;padding:4px;aspect-ratio:1}
 .brand span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .menu{display:flex;gap:4px;margin-left:auto}
 .menu a{padding:8px 12px;border-radius:10px;text-decoration:none;color:var(--muted);font-weight:600;font-size:15px}
@@ -46,7 +48,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .hero.photo{background-size:cover;background-position:center}
 .hero.photo::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(31,29,69,.88),rgba(60,58,119,.55))}
 .hero .wrap{position:relative;padding:64px 16px 72px;display:grid;grid-template-columns:1.3fr 1fr;gap:32px;align-items:center}
-.hero-logo{display:block;height:120px;width:auto;max-width:100%;margin-bottom:18px;border-radius:8px}
+.hero-logo{display:block;height:130px;width:auto;max-width:100%;margin-bottom:18px}
 .hero h1{font-size:clamp(32px,5vw,52px);font-weight:800}
 .hero p{font-size:18px;color:rgba(255,255,255,.85);margin:14px 0 26px;max-width:34em}
 .hero .ctas{display:flex;gap:10px;flex-wrap:wrap}
@@ -191,9 +193,11 @@ const S = {
 };
 
 function fail(err) { console.warn(err); S.error = err; render(); }
+const FAVICON_DEFAULT = document.querySelector('link[rel="icon"]')?.href || "";
 onSnapshot(doc(db, "settings", "logo"), (s) => {
-  S.logo = s.exists() ? s.data().dataUrl || null : null;
-  const link = document.querySelector('link[rel="icon"]'); if (link && S.logo) link.href = S.logo;
+  const x = s.exists() ? s.data() : {};
+  S.logo = x.dataUrl || null; S.logoOnDark = x.onDark === true;
+  const link = document.querySelector('link[rel="icon"]'); if (link) link.href = x.icon || S.logo || FAVICON_DEFAULT;
   render();
 }, (err) => console.warn("[logo]", err.code));
 onSnapshot(doc(db, "public_site", "main"), (s) => { S.site = s.exists() ? s.data() : {}; S.loaded.site = true; render(); }, fail);
@@ -251,7 +255,7 @@ function appUrl() { return safeUrl(S.site?.appUrl) || new URL("./", location.hre
 
 function viewHeader() {
   return `<header class="top"><div class="wrap">
-    <a class="brand" href="#top">${S.logo ? `<img class="logo" src="${S.logo}" alt="">` : BALL(34)}<span>${esc(clubName())}</span></a>
+    <a class="brand" href="#top">${S.logo ? `<span class="logo ${S.logoOnDark ? "badge" : ""}"><img src="${S.logo}" alt=""></span>` : BALL(34)}<span>${esc(clubName())}</span></a>
     <nav class="menu"><a href="#schedule">Schedule</a><a href="#games">Games</a>${S.standings.some((x) => x.current) ? `<a href="#standings">Standings</a>` : ""}${S.news.length ? `<a href="#news">News</a>` : ""}<a href="#about">About</a></nav>
     <a class="btn primary sm" href="${esc(appUrl())}">Team app</a>
   </div></header>`;
