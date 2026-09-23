@@ -156,7 +156,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .responder{border-top:1px solid var(--line);padding:10px 14px;display:flex;flex-direction:column;gap:6px}
 .resp,.valid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .resp button,.valid button{border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 2px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
-.valid{margin-top:8px}.valid button{padding:6px 2px;font-size:12px}
+.valid{margin-top:4px}.valid button{padding:6px 2px;font-size:12px}
+.resp.compact{margin-top:4px}.resp.compact button{padding:6px 2px;font-size:12px}
+.edit-label{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.linkbtn{border:0;background:none;color:var(--accent);font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;cursor:pointer;padding:2px 0}
 .resp button.on.ok,.valid button.on.ok{background:var(--ok);border-color:var(--ok);color:#fff}
 .resp button.on.warn,.valid button.on.warn{background:var(--warn);border-color:var(--warn);color:#fff}
 .resp button.on.bad,.valid button.on.bad{background:var(--bad);border-color:var(--bad);color:#fff}
@@ -251,7 +254,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.18";
+const VERSION = "v-0.19";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -694,7 +697,14 @@ function applyFavicon() {
   const link = document.querySelector('link[rel="icon"]');
   if (link) link.href = S.logoIcon || FAVICON_DEFAULT;
   const touch = document.querySelector('link[rel="apple-touch-icon"]');
-  if (touch) { if (!touch.dataset.def) touch.dataset.def = touch.getAttribute("href"); touch.href = S.logoIcon || touch.dataset.def; }
+  if (!touch) return;
+  if (!touch.dataset.def) touch.dataset.def = touch.getAttribute("href");
+  if (!S.logo) { touch.href = touch.dataset.def; return; }
+  // v-0.19: iPhone paints transparent parts black → give the home screen icon a solid square background
+  const key = `${S.logo.length}:${S.logoOnDark}`;
+  if (touch.dataset.key === key) return;
+  touch.dataset.key = key;
+  homeIcon(180).then((c) => { if (touch.dataset.key === key) touch.href = c.toDataURL("image/png"); }).catch(() => {});
 }
 const ICONS = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>`,
@@ -946,6 +956,9 @@ function viewAdmin() {
     <div class="card spread" style="margin-top:10px"><div class="row" style="flex-wrap:nowrap">${BALL(44)}<div><div style="font-weight:600">Club logo</div>
       <div class="small muted">${S.logo ? "Shown in the app, on the login screen, as the browser icon and on the website." : "No logo yet — the basketball is used."}</div></div></div>
       <div class="row" style="flex-wrap:nowrap">${S.logo ? `<button class="btn sm" data-act="logo-remove">Remove</button>` : ""}<button class="btn primary sm" data-act="logo-upload">${S.logo ? "Change" : "Upload logo"}</button></div></div>
+    ${S.logo ? `<div class="card spread" style="margin-top:10px"><div><div style="font-weight:600">Home Screen icon</div>
+      <div class="small muted">Download the icon files for phones and upload them to the GitHub repo.</div></div>
+      <button class="btn sm" data-act="logo-home-icons">📱 Download</button></div>` : ""}
     ${websiteSection()}
 
     <div class="section-title spread"><span>Seasons</span><button class="btn primary sm" data-act="season-new">+ New season</button></div>
@@ -2092,12 +2105,12 @@ function viewEventDetail(e) {
         <div class="num ${hasNum(m.number) && m.playerTeamId === e.teamId ? "" : "none"}">${hasNum(m.number) && m.playerTeamId === e.teamId ? esc(m.number) : "–"}</div>
         <div class="main">
           <div class="spread"><div class="title">${esc(fullName(m))}</div>
-            ${manage && !cancelled ? `<button type="button" class="badge ${r ? r[1] : ""} as-btn" data-act="respond-for" data-event="${e.id}" data-member="${m.id}">${r ? r[0] : "No reply"} ▾</button>`
-              : `<span class="badge ${r ? r[1] : ""}">${r ? r[0] : "No reply"}</span>`}</div>
+            <span class="badge ${r ? r[1] : ""}">${r ? r[0] : "No reply"}</span></div>
           ${ab ? `<div class="small"><span class="badge warn">Unavailable · ${esc(ABSENCE_TYPES[ab.type] || "")}</span>${ab.note ? ` <span class="muted">${esc(ab.note)}</span>` : ""}</div>` : ""}
           ${a?.reason ? `<div class="small muted">“${esc(a.reason)}”</div>` : ""}
           ${a?.respondedAt ? `<div class="small muted">${esc(fmtDateTime(a.respondedAt))} · ${esc(a.respondedByName || "")}</div>` : ""}
-          ${manage && !cancelled ? `<div class="valid">${Object.entries(VALIDATIONS).map(([k, [label, cls]]) =>
+          ${manage && !cancelled ? `<div class="edit-label"><span>Response</span><button type="button" class="linkbtn" data-act="respond-for" data-event="${e.id}" data-member="${m.id}">✎ ${a?.reason ? "Edit note" : "Add note"}</button></div>${respButtons(e, m, true)}` : ""}
+          ${manage && !cancelled ? `<div class="edit-label"><span>Coach check</span></div><div class="valid">${Object.entries(VALIDATIONS).map(([k, [label, cls]]) =>
             `<button type="button" class="${a?.validated === k ? `on ${cls}` : ""}" data-act="validate" data-event="${e.id}" data-member="${m.id}" data-v="${k}">${label}</button>`).join("")}</div>`
             : a?.validated ? `<div class="small">Coach: <span class="badge ${VALIDATIONS[a.validated][1]}">${VALIDATIONS[a.validated][0]}</span></div>` : ""}
         </div></div>`;
@@ -2427,6 +2440,7 @@ Object.assign(ACTIONS, {
   respond: async (el) => {
     const e = eventById(el.dataset.event), m = memberById(el.dataset.member), r = el.dataset.r;
     if (!e || !m) return;
+    if (attOf(e.id, m.id)?.response === r) return;
     if (isClosed(e) && !canManageTeam(e.teamId)) { toast("Responses are closed for this event.", "error"); return; }
     if (r === "late") { reasonModal(e, m, r); return; }
     await saveResponse(e, m, r);
@@ -4302,7 +4316,90 @@ function logoModal(img) {
   let t = null;
   $("#logo-tol")?.addEventListener("input", (e) => { opts.tolerance = Number(e.target.value); clearTimeout(t); t = setTimeout(redraw, 150); });
 }
+/* v-0.19: Home Screen icon. iPhone uses apple-touch-icon (no transparency, square),
+   Android uses manifest.webmanifest. Both must be real files next to index.html,
+   so the admin downloads them here and uploads them to the GitHub repo. */
+function homeIcon(size, { maskable = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = S.logoOnDark ? (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3c3a77") : "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+      const box = size * (maskable ? 0.66 : 0.8);
+      const f = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+      const w = img.naturalWidth * f, h = img.naturalHeight * f;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      resolve(c);
+    };
+    img.onerror = () => reject(new Error("Could not read the logo."));
+    img.src = S.logo;
+  });
+}
+const canvasBytes = (c) => new Promise((res) => c.toBlob(async (b) => res(new Uint8Array(await b.arrayBuffer())), "image/png"));
+// minimal ZIP (stored, no compression) so all files come in one download
+function makeZip(files) {
+  const crcT = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  const crc = (d) => { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = crcT[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  files.forEach(({ name, data }) => {
+    const nb = enc.encode(name), cr = crc(data);
+    const h = new DataView(new ArrayBuffer(30));
+    [[0, 0x04034b50, 4], [4, 20, 2], [8, 0, 2], [10, 0, 2], [12, 0x21, 2], [14, cr, 4], [18, data.length, 4], [22, data.length, 4], [26, nb.length, 2], [28, 0, 2]]
+      .forEach(([o, v, l]) => l === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+    const ch = new DataView(new ArrayBuffer(46));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0, 2], [10, 0, 2], [12, 0, 2], [14, 0x21, 2], [16, cr, 4], [20, data.length, 4], [24, data.length, 4], [28, nb.length, 2], [42, offset, 4]]
+      .forEach(([o, v, l]) => l === 4 ? ch.setUint32(o, v, true) : ch.setUint16(o, v, true));
+    parts.push(new Uint8Array(h.buffer), nb, data);
+    central.push(new Uint8Array(ch.buffer), nb);
+    offset += 30 + nb.length + data.length;
+  });
+  const size = central.reduce((s, p) => s + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  [[0, 0x06054b50, 4], [8, files.length, 2], [10, files.length, 2], [12, size, 4], [16, offset, 4]]
+    .forEach(([o, v, l]) => l === 4 ? end.setUint32(o, v, true) : end.setUint16(o, v, true));
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+}
+async function downloadHomeIcons() {
+  if (!S.logo) { toast("Upload the club logo first.", "error"); return; }
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3c3a77";
+  const manifest = {
+    name: appName(), short_name: appName().slice(0, 12), start_url: "./", scope: "./", display: "standalone",
+    background_color: "#ffffff", theme_color: accent,
+    icons: [
+      { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+    ]
+  };
+  const files = [
+    { name: "apple-touch-icon.png", data: await canvasBytes(await homeIcon(180)) },
+    { name: "icon-192.png", data: await canvasBytes(await homeIcon(192)) },
+    { name: "icon-512.png", data: await canvasBytes(await homeIcon(512)) },
+    { name: "icon-maskable-512.png", data: await canvasBytes(await homeIcon(512, { maskable: true })) },
+    { name: "manifest.webmanifest", data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) }
+  ];
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(makeZip(files));
+  a.download = "home-screen-icons.zip";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  openModal({
+    title: "Home Screen icons",
+    body: `<div class="stack small">
+      <div class="logo-prev"><div style="background:#fff"><img id="hs-prev" alt="" style="width:90px;height:90px;border-radius:20px;box-shadow:0 1px 6px rgba(0,0,0,.2)"></div></div>
+      <div><b>home-screen-icons.zip</b> was downloaded. Unzip it and upload the 5 files to the root of the GitHub repo (next to index.html):</div>
+      <div class="muted">apple-touch-icon.png · icon-192.png · icon-512.png · icon-maskable-512.png · manifest.webmanifest</div>
+      <div>Then, on each phone: remove the old BBapp icon from the Home Screen, open the app in Safari/Chrome again and do <b>Add to Home Screen</b>. Phones keep the old icon until it is added again.</div></div>`,
+  });
+  homeIcon(180).then((c) => { const i = $("#hs-prev"); if (i) i.src = c.toDataURL("image/png"); });
+}
 Object.assign(ACTIONS, {
+  "logo-home-icons": () => downloadHomeIcons().catch((err) => toast(errMsg(err), "error")),
   "logo-upload": () => pickLogoFile(),
   "logo-remove": () => confirmRun("Remove the club logo? The white basketball will be used again.", async () => {
     const batch = writeBatch(db);
