@@ -245,7 +245,7 @@ button.chip.on{background:var(--accent);color:#fff}
 <script type="module">
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+  sendPasswordResetEmail, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging.js";
 import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
   serverTimestamp, increment, arrayUnion, arrayRemove, deleteField, query, where, orderBy, limit, Timestamp
@@ -254,7 +254,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.19";
+const VERSION = "v-0.20";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -751,7 +751,7 @@ function viewAuth() {
     </form>`;
   } else if (m === "reset") {
     body = `<form data-form="reset" class="stack">
-      <p class="small muted" style="margin:0">We'll email you a link to choose a new password.</p>
+      <p class="small muted" style="margin:0">We'll email you a link to choose a new password. It comes from <b>noreply@bbapp-6b10e.firebaseapp.com</b> — if it's not in your inbox after a few minutes, look in spam / junk.</p>
       <label class="f">Email<input type="email" name="email" autocomplete="email" required></label>
       <button class="btn primary block" type="submit">Send reset link</button>
       <button class="btn ghost block" type="button" data-act="auth-mode" data-mode="login">Back to log in</button>
@@ -1438,7 +1438,8 @@ function profileModal() {
   openModal({
     title: "Profile",
     body: `<label class="f">Display name<input type="text" name="name" value="${esc(S.me.name || "")}" required></label>
-      <label class="f">Email<input type="email" value="${esc(S.user.email || "")}" disabled></label>
+      <div class="f" style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:600">Login email
+        <div style="font-size:16px;font-weight:500;color:var(--text);padding:10px 12px;background:var(--surface-2);border-radius:10px;word-break:break-all">${esc(S.user.email || "—")}</div></div>
       <label class="f">Phone<input type="text" name="phone" inputmode="tel" value="${esc(S.me.phone || "")}"></label>
       <div class="row">${myBadges()}</div>
       ${(() => {
@@ -1457,7 +1458,7 @@ function profileModal() {
           ${st === "blocked" ? `<div class="small muted">Allow notifications for this site in your browser settings, then come back.</div>` : ""}</div>`;
       })()}
       <button type="button" class="btn block" data-act="redeem">Redeem invite code</button>
-      <button type="button" class="btn block" data-act="password-reset">Send password reset email</button>
+      <button type="button" class="btn block" data-act="password-change">Change password</button>
       <button type="button" class="btn danger block" data-act="logout">Log out</button>`,
     onSubmit: async (d) => {
       if (!d.name?.trim()) throw new Error("Name is required.");
@@ -1546,7 +1547,7 @@ const FORMS = {
   async login(d) { await signInWithEmailAndPassword(auth, d.email.trim(), d.password); },
   async reset(d) {
     await sendPasswordResetEmail(auth, d.email.trim());
-    toast("If that email has an account, a reset link is on its way.");
+    toast("If that email has an account, a reset link is on its way. Check the spam folder too.");
     S.authMode = "login"; render();
   },
   async "join-check"(d) {
@@ -1636,6 +1637,25 @@ const ACTIONS = {
   redeem: () => redeemModal(),
   "push-enable": () => enablePush(false),
   "password-reset": async () => { await sendPasswordResetEmail(auth, S.user.email); toast("Reset link sent to " + S.user.email); },
+  // v-0.20: change the password inside the app (no email needed) — confirm with the current password
+  "password-change": () => openModal({
+    title: "Change password",
+    body: `<div class="small muted">Logged in as <b>${esc(S.user.email || "")}</b></div>
+      <label class="f">Current password<input type="password" name="cur" autocomplete="current-password" required></label>
+      <label class="f">New password<input type="password" name="p1" autocomplete="new-password" minlength="6" required></label>
+      <label class="f">Repeat new password<input type="password" name="p2" autocomplete="new-password" required></label>
+      <p class="small muted" style="margin:0">Forgot your current password? Log out and use “Forgot password?” on the login screen. The email comes from <b>noreply@bbapp-6b10e.firebaseapp.com</b> — check the spam folder.</p>`,
+    submitLabel: "Change password",
+    onSubmit: async (d) => {
+      if (!d.cur) throw new Error("Enter your current password.");
+      if ((d.p1 || "").length < 6) throw new Error("The new password needs at least 6 characters.");
+      if (d.p1 !== d.p2) throw new Error("The new passwords are not the same.");
+      try { await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(S.user.email, d.cur)); }
+      catch (err) { if (["auth/invalid-credential", "auth/wrong-password"].includes(err?.code)) throw new Error("The current password is wrong."); throw err; }
+      await updatePassword(auth.currentUser, d.p1);
+      toast("Password changed");
+    }
+  }),
   tab: (el) => { resetPlays(); S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
   "modal-close": () => closeModal(),
   "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
