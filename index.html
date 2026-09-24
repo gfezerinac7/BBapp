@@ -235,6 +235,62 @@ button.chip.on{background:var(--accent);color:#fff}
 .video{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000}
 .video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em}
+
+/* playing time (v-0.22) */
+.wrap.wide{max-width:1320px}
+.rot-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}
+.rot-title{flex:1;min-width:180px}
+.rot-title h2{font-size:18px}
+.rot-tabs{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.rot-tabs button{border:none;background:none;padding:6px 11px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--muted)}
+.rot-tabs button.on{background:var(--accent);color:#fff}
+.rot-layout{display:grid;gap:16px}
+.rot-qs{display:grid;gap:14px;align-content:start;align-items:start}
+@media(min-width:1000px){.rot-layout{grid-template-columns:minmax(0,1fr) 260px}.rot-side{position:sticky;top:72px;align-self:start;max-height:calc(100vh - 90px);overflow:auto;padding-bottom:8px}}
+@media(min-width:1180px){.rot-qs{grid-template-columns:1fr 1fr}}
+.rq{padding:12px 12px 10px}
+.rq-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;min-height:32px}
+.rq-head b{flex:1;text-align:center}
+.rq-sp{width:70px}
+.rq-grid{display:grid;grid-template-columns:28px minmax(0,1fr);row-gap:6px;align-items:center}
+.rq-axis{position:relative;height:22px}
+.rq-axis span{position:absolute;bottom:7px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+.rq-axis span.first{transform:none}
+.rq-axis span::after{content:"";position:absolute;left:50%;top:14px;height:5px;border-left:1.5px solid #7d8796}
+.rq-axis span.first::after{left:0}
+.rq-pos{font-size:12px;font-weight:700;color:var(--muted)}
+.rq-row{position:relative;height:36px;border-radius:6px;background:var(--surface-2)}
+.rseg{position:absolute;top:0;bottom:0;display:flex;align-items:center;padding:0 6px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-right:1px solid rgba(255,255,255,.75);user-select:none;-webkit-user-select:none}
+.rseg.empty{background:repeating-linear-gradient(45deg,#eef2f7 0 6px,#e1e7ef 6px 12px);color:var(--muted);font-weight:500}
+.rseg.conf{box-shadow:inset 0 0 0 3px #c92a2a}
+.rseg.sel{box-shadow:inset 0 0 0 3px #111}
+.rh{position:absolute;top:-5px;bottom:-5px;width:22px;margin-left:-11px;cursor:ew-resize;touch-action:none;z-index:2;display:flex;justify-content:center}
+.rh::before{content:"";width:4px;border-radius:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.rh .tip{position:absolute;top:-22px;background:#111;color:#fff;font-size:11px;padding:2px 6px;border-radius:5px;display:none;white-space:nowrap}
+.rh.on .tip{display:block}
+.rp-card{border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--surface)}
+.rp-head{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;font-weight:700}
+.rp-body{padding:8px 10px 2px;display:flex;gap:4px}
+.rp-q{padding:4px 10px 8px}
+.rp-pos{font-size:10px;font-weight:700;padding:3px 6px;border-radius:5px;background:var(--surface-2);color:#b3bcc9}
+.rp-pos.on{background:#687385;color:#fff}
+.rbar{height:14px;border-radius:7px;background:var(--surface-2);position:relative;margin-top:4px}
+.rbar i{position:absolute;left:0;top:0;bottom:0;border-radius:7px}
+.rbar .even{position:absolute;top:-3px;bottom:-3px;border-left:2px dashed #1d2330;opacity:.5}
+.rot-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px}
+.rot-pick button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:1px solid var(--line);border-left:6px solid #c9d1dc;background:var(--surface);border-radius:8px;padding:7px 9px;cursor:pointer}
+.rot-pick button.on{outline:2px solid var(--accent);outline-offset:1px}
+.rtable{width:100%;border-collapse:collapse;font-size:13px}
+.rtable th,.rtable td{padding:6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.rtable th{font-size:12px;color:var(--muted)}
+.rtable th:first-child,.rtable td:first-child{text-align:left}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.rsub{display:grid;grid-template-columns:44px 1fr;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:14px;margin-top:6px}
+.rin,.rout{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px}
+.rin{background:var(--ok-soft);color:var(--ok)}.rout{background:var(--bad-soft);color:var(--bad)}
+.print-only{display:none}
+@media(max-width:560px){.rq-axis span.odd{display:none}.rseg{font-size:12px;padding:0 4px}.rq{padding:10px 8px 8px}}
+@media print{.top,.nav,.no-print,.foot{display:none!important}main{padding:0}.card{box-shadow:none;break-inside:avoid}.print-only{display:block;margin-bottom:10px}.rot-qs{grid-template-columns:1fr 1fr}body{background:#fff}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
 <body>
@@ -254,7 +310,7 @@ import { getFirestore, doc, collection, getDoc, setDoc, updateDoc, deleteDoc, on
 /* =========================================================
    CONFIG
    ========================================================= */
-const VERSION = "v-0.20";
+const VERSION = "v-0.22";
 const firebaseConfig = {
   apiKey: "AIzaSyCHXUL5qlZZ_me6S8oGzMMHqcBs0cV43eY",
   authDomain: "bbapp-6b10e.firebaseapp.com",
@@ -649,7 +705,8 @@ function renderNow() {
   // never rebuild the court while a player is being dragged (but never get stuck if the browser lost the "finger up")
   if (drag && Date.now() - drag.last < 4000) return;
   if (sketch && Date.now() - sketch.last < 4000) return;
-  drag = null; sketch = null;
+  if (rotDrag && Date.now() - rotDrag.last < 4000) return;
+  drag = null; sketch = null; rotDrag = null;
   document.title = appName();
   const root = $("#app");
   const active = document.activeElement;
@@ -816,7 +873,7 @@ function viewShell() {
     <div class="brand">${BALL(S.logo ? 42 : 34, true)}<div class="names"><div class="app">${esc(appName())}</div><div class="club">${esc(clubName())}</div></div></div>
     <button class="avatar" data-act="profile" aria-label="Profile">${esc(initials(S.me.name))}</button>
   </div></header>
-  <main><div class="wrap">${rulesBanner()}${views[S.tab]()}${footer()}</div></main>
+  <main><div class="wrap${S.rot && S.eventId === S.rot.eventId && S.tab === "calendar" ? " wide" : ""}">${rulesBanner()}${views[S.tab]()}${footer()}</div></main>
   <nav class="nav"><div class="wrap">${tabs.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k || (k === "home" && S.tab === "news") ? "on" : ""}">${ICONS[k]}<span>${l}</span></button>`).join("")}</div></nav>`;
 }
 function rulesBanner() {
@@ -1656,7 +1713,7 @@ const ACTIONS = {
       toast("Password changed");
     }
   }),
-  tab: (el) => { resetPlays(); S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
+  tab: (el) => { if (S.rot?.dirty && !window.confirm("Leave without saving the playing time?")) return; S.rot = null; resetPlays(); S.tab = el.dataset.tab; S.teamId = null; S.eventId = null; if (el.dataset.tab === "calendar") S.weekStart = mondayOf(todayISO()); render(); window.scrollTo(0, 0); },
   "modal-close": () => closeModal(),
   "toggle-old-invites": () => { S.showOldInvites = !S.showOldInvites; render(); },
   "member-scope": (el) => { S.memberScope = el.dataset.scope; render(); },
@@ -2058,6 +2115,7 @@ function viewCalendar() {
   return html;
 }
 function viewEventDetail(e) {
+  if (S.rot && S.rot.eventId === e.id && canManageTeam(e.teamId)) return rotationView(e);
   const t = teamById(e.teamId);
   const manage = canManageTeam(e.teamId);
   const c = countsFor(e);
@@ -2421,7 +2479,7 @@ Object.assign(ACTIONS, {
     if (e) S.weekStart = mondayOf(e.date);
     S.tab = "calendar"; S.eventId = el.dataset.id; render(); window.scrollTo(0, 0);
   },
-  "event-back": () => { S.eventId = null; render(); },
+  "event-back": () => { S.rot = null; S.eventId = null; render(); },
   "event-cancel": (el) => {
     const e = eventById(el.dataset.id);
     const cancel = e.status !== "cancelled";
@@ -2516,14 +2574,17 @@ function callUpBadge(e) {
 function callUpSection(e, manage) {
   const ids = e.callUpIds || [];
   const published = callUpPublished(e);
+  const mins = manage ? rotMinutesByPlayer(e) : {};
   const chips = ids.map(memberById).filter(Boolean).sort(callUpOrder(e))
-    .map((m) => `<span class="chip">${hasNum(m.number) && m.playerTeamId === e.teamId ? `<b>#${esc(m.number)}</b> ` : ""}${esc(fullName(m))}${m.playerTeamId !== e.teamId && teamById(m.playerTeamId) ? ` <span class="muted">(${esc(teamById(m.playerTeamId).name)})</span>` : ""}</span>`).join("");
+    .map((m) => `<span class="chip">${hasNum(m.number) && m.playerTeamId === e.teamId ? `<b>#${esc(m.number)}</b> ` : ""}${esc(fullName(m))}${m.playerTeamId !== e.teamId && teamById(m.playerTeamId) ? ` <span class="muted">(${esc(teamById(m.playerTeamId).name)})</span>` : ""}${manage && mins[m.id] ? ` <span class="badge">${fmtClock(mins[m.id])}</span>` : ""}</span>`).join("");
+
   let html = `<div class="section-title spread"><span>Call-up</span>${manage && !isPast(e) ? `<button class="btn primary sm" data-act="callup-edit" data-id="${e.id}">${ids.length ? "Edit call-up" : "Select players"}</button>` : ""}</div>`;
   if (manage) {
     html += `<div class="card stack" style="gap:8px">
       <div class="spread"><div>${published ? `<span class="badge ok">Published</span> <span class="small muted">${esc(fmtDateTime(e.callUpPublishedAt))} · ${esc(e.callUpByName || "")}</span>` : ids.length ? `<span class="badge warn">Draft</span> <span class="small muted">Only coaches can see it</span>` : `<span class="muted small">No players selected yet.</span>`}</div>
         <span class="small ${ids.length > CALLUP_MAX ? "bad-text" : "muted"}">${ids.length}/${CALLUP_MAX}</span></div>
       ${chips ? `<div class="chips">${chips}</div>` : ""}
+      <div class="row"><button class="btn sm" data-act="rot-open" data-id="${e.id}">⏱ Playing time${e.rotation ? "" : " – plan"}</button>${e.rotation ? `<span class="small muted">${esc(rotSummary(e))}</span>` : ""}</div>
       ${!isPast(e) && ids.length ? `<div class="row">${published ? `<button class="btn sm" data-act="callup-unpublish" data-id="${e.id}">Unpublish</button>` : `<button class="btn primary sm" data-act="callup-publish" data-id="${e.id}">Publish call-up</button>`}</div>` : ""}
     </div>`;
   } else if (published) {
@@ -2536,23 +2597,30 @@ function callUpSection(e, manage) {
 function callUpModal(e) {
   const t = teamById(e.teamId);
   const selected = new Set(e.callUpIds || []);
+  // v-0.21: only players who answered Going or Maybe (+ anyone already in the call-up, so they can be removed)
+  const CALLUP_OK = ["yes", "maybe"];
+  const eligible = (m) => selected.has(m.id) || CALLUP_OK.includes(attOf(e.id, m.id)?.response);
   const byNum = (a, b) => Number(hasNum(a.number) ? a.number : 999) - Number(hasNum(b.number) ? b.number : 999) || fullName(a).localeCompare(fullName(b));
-  const teamPlayers = rosterOf(e.teamId).sort(byNum);
+  const roster = rosterOf(e.teamId);
+  const teamPlayers = roster.filter(eligible).sort(byNum);
+  const hidden = roster.length - teamPlayers.length;
   const others = S.members.filter((m) => roles(m).player && m.playerTeamId !== e.teamId).sort((a, b) => fullName(a).localeCompare(fullName(b)));
   const row = (m) => {
     const a = attOf(e.id, m.id), ab = absenceFor(m.id, e.date);
     const r = a?.response ? RESPONSES[a.response] : null;
+    const off = selected.has(m.id) && !CALLUP_OK.includes(a?.response) && m.playerTeamId === e.teamId;
     return `<label class="pick"><input type="checkbox" name="cu_${m.id}" ${selected.has(m.id) ? "checked" : ""}>
       <span class="num ${hasNum(m.number) && m.playerTeamId === e.teamId ? "" : "none"}">${hasNum(m.number) && m.playerTeamId === e.teamId ? esc(m.number) : "–"}</span>
       <span class="main"><span class="title">${esc(fullName(m))}</span>
         <span class="small muted">${[m.pos1, m.pos2].filter(Boolean).join(" / ")}${m.playerTeamId !== e.teamId && teamById(m.playerTeamId) ? ` · ${esc(teamById(m.playerTeamId).name)}` : ""}</span></span>
-      ${ab ? `<span class="badge warn">Unavailable</span>` : r ? `<span class="badge ${r[1]}">${r[0]}</span>` : ""}</label>`;
+      ${ab ? `<span class="badge warn">Unavailable</span>` : r ? `<span class="badge ${r[1]}">${r[0]}</span>` : off ? `<span class="badge">No answer</span>` : ""}</label>`;
   };
   openModal({
     title: `Call-up · ${eventTitle(e)}`,
     body: `<div class="small muted">${esc(t?.name || "")} · ${esc(fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" }))} ${esc(e.startTime || "")}</div>
       <div class="spread"><b id="cu-count">${selected.size} selected</b><span class="small muted">Max ${CALLUP_MAX} players</span></div>
-      <div class="list">${teamPlayers.length ? teamPlayers.map(row).join("") : `<div class="item muted">No players on ${esc(t?.name || "this team")}.</div>`}</div>
+      <p class="small muted" style="margin:0">Showing players who answered <b>Going</b> or <b>Maybe</b>.${hidden ? ` ${plural(hidden, "player")} hidden (no answer / late / can't go).` : ""}</p>
+      <div class="list">${teamPlayers.length ? teamPlayers.map(row).join("") : `<div class="item muted">${roster.length ? "Nobody has answered Going or Maybe yet." : `No players on ${esc(t?.name || "this team")}.`}</div>`}</div>
       ${others.length ? `<details class="others"><summary>Players from other teams (${others.length})</summary><div class="list" style="margin-top:8px">${others.map(row).join("")}</div></details>` : ""}
       <label class="check"><input type="checkbox" name="publish" ${callUpPublished(e) ? "checked" : ""}> Publish now (players and parents can see it)</label>`,
     submitLabel: "Save call-up",
@@ -2582,6 +2650,389 @@ async function saveCallUp(e, ids, publish) {
   log(batch, publish ? "Published call-up" : "Saved call-up draft", { label: `${eventTitle(e)} · ${e.date} · ${ids.length} players` });
   await batch.commit();
 }
+
+/* =========================================================
+   PLAYING TIME / ROTATION (v-0.22) — coaches only
+   events.rotation = { periods: 4|2, len: seconds per period,
+     q: [ { PG: { c: [cut seconds from period start], p: [memberId | ""] }, SG…, C } ] }
+   p has one more entry than c: p[i] plays from c[i-1] (or 0) until c[i] (or len).
+   ========================================================= */
+const ROT_POS = ["PG", "SG", "SF", "PF", "C"];
+const ROT_SNAP = 15;
+const ROT_COLORS = ["#ef7a4f", "#5b9eea", "#7bb86f", "#9b4fb8", "#d94d77", "#4fa39a", "#f2a93b", "#5f6abf", "#f5c84c", "#3fa7c9", "#a0785a", "#8ab83c", "#c0587e", "#2e8b57", "#e26d5c", "#7f8c9d"];
+let rotDrag = null;
+function fmtClock(sec) { sec = Math.max(0, Math.round(Number(sec) || 0)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
+function parseClock(v) {
+  const m = String(v || "").trim().match(/^(\d{1,2})(?:[:.,](\d{1,2}))?$/);
+  if (!m || Number(m[2] || 0) > 59) return NaN;
+  return Number(m[1]) * 60 + Number(m[2] || 0);
+}
+function textOn(hex) {
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.72 ? "#1d2330" : "#ffffff";
+}
+const perLabel = (r, q) => r.periods === 2 ? `${q === 0 ? "1st" : "2nd"} Half` : `${["1st", "2nd", "3rd", "4th"][q]} Quarter`;
+const perShort = (r, q) => r.periods === 2 ? `H${q + 1}` : `Q${q + 1}`;
+function mergeRow(row) {
+  const c = [], p = [row.p[0] || ""];
+  row.c.forEach((t, i) => { const id = row.p[i + 1] || ""; if (id === p[p.length - 1]) return; c.push(t); p.push(id); });
+  return { c, p };
+}
+function normRot(src) {
+  const periods = [2, 4].includes(Number(src?.periods)) ? Number(src.periods) : 4;
+  const len = Math.min(1200, Math.max(120, Math.round(Number(src?.len) || 600)));
+  const q = [];
+  for (let k = 0; k < periods; k++) {
+    const Q = (Array.isArray(src?.q) ? src.q[k] : null) || {}, o = {};
+    ROT_POS.forEach((pos) => {
+      const row = Q[pos] || {};
+      const rawC = Array.isArray(row.c) ? row.c.map(Number) : [], rawP = Array.isArray(row.p) ? row.p : [];
+      const c = [], p = [typeof rawP[0] === "string" ? rawP[0] : ""];
+      rawC.forEach((t, i) => {
+        t = Math.round(t);
+        if (!Number.isFinite(t) || t <= 0 || t >= len || (c.length && t <= c[c.length - 1])) return;
+        c.push(t); p.push(typeof rawP[i + 1] === "string" ? rawP[i + 1] : "");
+      });
+      o[pos] = mergeRow({ c, p });
+    });
+    q.push(o);
+  }
+  return { periods, len, q };
+}
+function rotSegs(row, len) { const b = [0, ...row.c, len]; return row.p.map((id, i) => ({ i, id, s: b[i], e: b[i + 1] })); }
+function rotPool(e, r) {
+  let ids = (e.callUpIds || []).filter((id) => memberById(id));
+  if (!ids.length) ids = rosterOf(e.teamId).filter((m) => ["yes", "maybe", "late"].includes(attOf(e.id, m.id)?.response)).map((m) => m.id);
+  if (!ids.length) ids = rosterOf(e.teamId).map((m) => m.id);
+  const list = ids.map(memberById).filter(Boolean).sort(callUpOrder(e)).map((m) => m.id);
+  const extra = [];
+  if (r) r.q.forEach((Q) => ROT_POS.forEach((pos) => Q[pos].p.forEach((id) => { if (id && !list.includes(id) && !extra.includes(id)) extra.push(id); })));
+  const all = [...list, ...extra];
+  const firsts = {};
+  all.forEach((id) => { const f = memberById(id)?.firstName || "?"; firsts[f] = (firsts[f] || 0) + 1; });
+  const nameOf = (id) => {
+    if (!id) return "";
+    const m = memberById(id); if (!m) return "Removed player";
+    return firsts[m.firstName] > 1 && m.lastName ? `${m.firstName} ${m.lastName[0]}.` : (m.firstName || fullName(m));
+  };
+  const colorOf = (id) => ROT_COLORS[Math.max(0, all.indexOf(id)) % ROT_COLORS.length];
+  return { list, extra, all, nameOf, colorOf };
+}
+function newRotation(e) {
+  const pool = rotPool(e, null), used = new Set(), start = {};
+  const pick = (pos, key) => pool.list.find((id) => !used.has(id) && memberById(id)?.[key] === pos);
+  ROT_POS.forEach((pos) => { const id = pick(pos, "pos1"); if (id) { used.add(id); start[pos] = id; } });
+  ROT_POS.forEach((pos) => { if (start[pos]) return; const id = pick(pos, "pos2"); if (id) { used.add(id); start[pos] = id; } });
+  const Q = () => Object.fromEntries(ROT_POS.map((pos) => [pos, { c: [], p: [start[pos] || ""] }]));
+  return { periods: 4, len: 600, q: [Q(), Q(), Q(), Q()] };
+}
+function rotStats(r) {
+  const P = {}, conflicts = [], lineups = {}, subs = [];
+  const get = (id) => P[id] || (P[id] = { total: 0, perQ: Array(r.periods).fill(0), pos: {}, stints: 0, longest: 0 });
+  let empty = 0;
+  r.q.forEach((Q, q) => {
+    const cuts = new Set([0, r.len]);
+    ROT_POS.forEach((pos) => Q[pos].c.forEach((t) => cuts.add(t)));
+    const T = [...cuts].sort((a, b) => a - b);
+    const at = (pos, t) => { const row = Q[pos]; let i = 0; while (i < row.c.length && row.c[i] <= t) i++; return row.p[i] || ""; };
+    const run = {}, list = [];
+    let prev = null;
+    for (let k = 0; k < T.length - 1; k++) {
+      const a = T[k], d = T[k + 1] - a, on = {};
+      ROT_POS.forEach((pos) => { const id = at(pos, a); if (!id) { empty += d; return; } (on[id] = on[id] || []).push(pos); });
+      Object.entries(on).forEach(([id, ps]) => {
+        const x = get(id); x.total += d; x.perQ[q] += d;
+        ps.forEach((pos) => (x.pos[pos] = (x.pos[pos] || 0) + d / ps.length));
+        if (ps.length > 1) conflicts.push({ q, id, s: a, e: a + d, ps });
+        run[id] = (run[id] || 0) + d;
+      });
+      Object.keys(run).forEach((id) => { if (!on[id]) { const x = get(id); x.stints++; x.longest = Math.max(x.longest, run[id]); delete run[id]; } });
+      const ids = Object.keys(on);
+      if (ids.length === 5 && Object.values(on).every((ps) => ps.length === 1)) { const key = [...ids].sort().join(","); lineups[key] = (lineups[key] || 0) + d; }
+      if (prev) {
+        const ins = ids.filter((id) => !prev[id]).map((id) => ({ id, pos: on[id] }));
+        const outs = Object.keys(prev).filter((id) => !on[id]).map((id) => ({ id, pos: prev[id] }));
+        const moves = ids.filter((id) => prev[id] && prev[id].join() !== on[id].join()).map((id) => ({ id, from: prev[id], to: on[id] }));
+        if (ins.length || outs.length || moves.length) list.push({ t: a, ins, outs, moves });
+      }
+      prev = on;
+    }
+    Object.keys(run).forEach((id) => { const x = get(id); x.stints++; x.longest = Math.max(x.longest, run[id]); });
+    subs.push({ start: ROT_POS.map((pos) => ({ pos, id: at(pos, 0) })), list });
+  });
+  return { P, empty, conflicts, subs, full: r.periods * r.len * 5,
+    lineups: Object.entries(lineups).map(([k, sec]) => ({ ids: k.split(","), sec })).sort((a, b) => b.sec - a.sec) };
+}
+function rotMinutesByPlayer(e) {
+  if (!e.rotation) return {};
+  const st = rotStats(normRot(e.rotation));
+  return Object.fromEntries(Object.entries(st.P).map(([id, x]) => [id, x.total]));
+}
+function rotSummary(e) {
+  const st = rotStats(normRot(e.rotation));
+  const n = Object.keys(st.P).length;
+  return `${plural(n, "player")} planned${st.conflicts.length ? " · ⚠ double positions" : ""}${st.empty ? ` · ${fmtClock(st.empty)} empty` : ""}${e.rotationByName ? ` · ${e.rotationByName}` : ""}`;
+}
+
+/* ---------- views ---------- */
+function rotQuarterHtml(r, q, st, pool, edit) {
+  const Q = r.q[q], L = r.len, pct = (t) => `${(t / L) * 100}%`;
+  let ticks = "";
+  for (let t = 0, k = 0; t < L; t += 60, k++) ticks += `<span class="${k % 2 ? "odd" : ""}${t === 0 ? " first" : ""}" style="left:${pct(t)}">${fmtClock(L - t)}</span>`;
+  const sel = edit && S.rot?.sel;
+  const rows = ROT_POS.map((pos) => {
+    const segs = rotSegs(Q[pos], L).map((sg) => {
+      const conf = sg.id && st.conflicts.some((c) => c.q === q && c.id === sg.id && c.s < sg.e && c.e > sg.s);
+      const col = sg.id ? pool.colorOf(sg.id) : "";
+      const isSel = sel && sel.q === q && sel.pos === pos && sel.i === sg.i && S.modal;
+      const label = sg.id ? pool.nameOf(sg.id) : edit ? "+ Empty" : "—";
+      return `<div id="rs-${q}-${pos}-${sg.i}" class="rseg${sg.id ? "" : " empty"}${conf ? " conf" : ""}${isSel ? " sel" : ""}" style="left:${pct(sg.s)};width:${pct(sg.e - sg.s)};${col ? `background:${col};color:${textOn(col)}` : ""}"
+        ${edit ? `data-act="rot-seg" data-q="${q}" data-pos="${pos}" data-i="${sg.i}"` : ""} title="${esc(label)} · ${fmtClock(L - sg.s)}–${fmtClock(L - sg.e)}">${conf ? "⚠ " : ""}${esc(label)}</div>`;
+    }).join("");
+    const handles = edit ? Q[pos].c.map((t, i) => `<div class="rh" data-q="${q}" data-pos="${pos}" data-i="${i}" style="left:${pct(t)}"><span class="tip">${fmtClock(L - t)}</span></div>`).join("") : "";
+    return `<div class="rq-pos">${pos}</div><div class="rq-row">${segs}${handles}</div>`;
+  }).join("");
+  const head = edit
+    ? `${q ? `<button class="btn ghost sm" data-act="rot-copy" data-q="${q}" title="Copy the ${esc(perLabel(r, q - 1))} into this one">⧉ Copy ${perShort(r, q - 1)}</button>` : `<span class="rq-sp"></span>`}
+       <b>${perLabel(r, q)}</b><button class="btn ghost sm" data-act="rot-clear" data-q="${q}">Clear</button>`
+    : `<b>${perLabel(r, q)}</b>`;
+  return `<div class="card rq"><div class="rq-head">${head}</div><div class="rq-grid"><div></div><div class="rq-axis">${ticks}</div>${rows}</div></div>`;
+}
+function rotPlayersHtml(r, st, pool) {
+  const ids = [...pool.all].sort((a, b) => (st.P[b]?.total || 0) - (st.P[a]?.total || 0));
+  return ids.map((id) => {
+    const x = st.P[id], col = pool.colorOf(id);
+    return `<div class="rp-card"><div class="rp-head" style="background:${col};color:${textOn(col)}"><span>${esc(pool.nameOf(id))}</span><span>${fmtClock(x?.total || 0)}</span></div>
+      <div class="rp-body">${ROT_POS.map((pos) => `<span class="rp-pos${x?.pos[pos] ? " on" : ""}">${pos}</span>`).join("")}</div>
+      <div class="rp-q small muted">${x ? x.perQ.map((s, q) => `${perShort(r, q)} ${fmtClock(s)}`).join(" · ") : "Not playing"}</div>
+      ${pool.extra.includes(id) ? `<div class="rp-q small bad-text">Not in the call-up</div>` : ""}</div>`;
+  }).join("") || `<div class="card empty">No players. Make the call-up first.</div>`;
+}
+function rotWarnings(r, st, pool) {
+  const w = [];
+  if (st.conflicts.length) {
+    const names = [...new Set(st.conflicts.map((c) => pool.nameOf(c.id)))];
+    w.push(`<b>⚠ Same player in two positions at once:</b> ${esc(names.join(", "))}. Look for the red outline.`);
+  }
+  if (st.empty) w.push(`${fmtClock(st.empty)} of court time has nobody assigned (striped boxes).`);
+  if (pool.extra.length) w.push(`${esc(pool.extra.map(pool.nameOf).join(", "))} ${pool.extra.length > 1 ? "are" : "is"} not in the call-up.`);
+  return w.length ? `<div class="notice ${st.conflicts.length ? "bad" : ""} no-print" style="margin-bottom:12px">${w.join("<br>")}</div>` : "";
+}
+function rotAnalysisHtml(r, st, pool) {
+  const played = pool.all.filter((id) => st.P[id]?.total);
+  const assigned = st.full - st.empty, even = played.length ? assigned / played.length : 0;
+  const gameLen = r.periods * r.len;
+  const ids = [...played].sort((a, b) => st.P[b].total - st.P[a].total);
+  const bench = pool.all.filter((id) => !st.P[id]?.total);
+  let html = `<div class="stats">
+    <div class="card stat"><div class="label">Court time planned</div><div class="big">${fmtClock(assigned)}</div><div class="small muted">of ${fmtClock(st.full)}</div></div>
+    <div class="card stat"><div class="label">Players used</div><div class="big">${played.length}</div><div class="small muted">${bench.length ? `${bench.length} not playing` : "everyone plays"}</div></div>
+    <div class="card stat"><div class="label">Even share</div><div class="big">${fmtClock(even)}</div><div class="small muted">per player</div></div>
+    <div class="card stat"><div class="label">Problems</div><div class="big ${st.conflicts.length || st.empty ? "bad-text" : ""}">${st.conflicts.length + (st.empty ? 1 : 0)}</div><div class="small muted">${st.conflicts.length ? "double positions" : st.empty ? "empty time" : "none"}</div></div>
+  </div>`;
+  html += `<div class="section-title">Minutes per player <span class="small muted" style="text-transform:none;letter-spacing:0">· dashed line = even share</span></div><div class="card stack" style="gap:10px">${ids.map((id) => {
+    const x = st.P[id], col = pool.colorOf(id);
+    return `<div><div class="spread small"><b>${esc(pool.nameOf(id))}</b><span><b>${fmtClock(x.total)}</b> <span class="muted">· ${Math.round((x.total / gameLen) * 100)}% of the game</span></span></div>
+      <div class="rbar"><i style="width:${(x.total / gameLen) * 100}%;background:${col}"></i><span class="even" style="left:${(even / gameLen) * 100}%"></span></div></div>`;
+  }).join("") || `<div class="muted">Nobody assigned yet.</div>`}
+  ${bench.length ? `<div class="small muted">Not playing: ${esc(bench.map(pool.nameOf).join(", "))}</div>` : ""}</div>`;
+  html += `<div class="section-title">Per ${r.periods === 2 ? "half" : "quarter"} and rest</div><div class="card" style="overflow-x:auto"><table class="rtable">
+    <tr><th>Player</th>${r.q.map((_, q) => `<th>${perShort(r, q)}</th>`).join("")}<th>Total</th><th>Stints</th><th>Longest</th></tr>
+    ${ids.map((id) => { const x = st.P[id]; return `<tr><td><span class="dot" style="background:${pool.colorOf(id)}"></span>${esc(pool.nameOf(id))}</td>${x.perQ.map((s) => `<td>${s ? fmtClock(s) : `<span class="muted">–</span>`}</td>`).join("")}<td><b>${fmtClock(x.total)}</b></td><td>${x.stints}</td><td>${fmtClock(x.longest)}</td></tr>`; }).join("")}
+  </table><div class="small muted" style="margin-top:6px">Stints = separate spells on court (a new ${r.periods === 2 ? "half" : "quarter"} starts a new spell).</div></div>`;
+  html += `<div class="section-title">Minutes by position</div><div class="card" style="overflow-x:auto"><table class="rtable">
+    <tr><th>Player</th>${ROT_POS.map((p) => `<th>${p}</th>`).join("")}</tr>
+    ${ids.map((id) => { const x = st.P[id]; return `<tr><td><span class="dot" style="background:${pool.colorOf(id)}"></span>${esc(pool.nameOf(id))}</td>${ROT_POS.map((p) => `<td>${x.pos[p] ? fmtClock(x.pos[p]) : `<span class="muted">–</span>`}</td>`).join("")}</tr>`; }).join("")}
+  </table></div>`;
+  html += `<div class="section-title">Most used lineups</div><div class="card stack" style="gap:8px">${st.lineups.slice(0, 8).map((l) =>
+    `<div class="spread" style="align-items:flex-start"><div class="chips">${l.ids.map((id) => `<span class="chip" style="border-left:5px solid ${pool.colorOf(id)}">${esc(pool.nameOf(id))}</span>`).join("")}</div><b class="small" style="white-space:nowrap">${fmtClock(l.sec)}</b></div>`).join("") || `<div class="muted">No complete five yet.</div>`}</div>`;
+  return html;
+}
+function rotPreviewHtml(e, r, st, pool) {
+  let html = `<div class="rot-qs">${r.q.map((_, q) => rotQuarterHtml(r, q, st, pool, false)).join("")}</div>`;
+  html += `<div class="section-title">Substitution plan</div><div class="rot-qs">${st.subs.map((sq, q) => {
+    const posTxt = (ps) => ps.join("/");
+    const lines = sq.list.map((s) => `<div class="rsub"><b>${fmtClock(r.len - s.t)}</b><div>
+      ${s.ins.map((x) => `<span class="rin">IN</span> ${esc(pool.nameOf(x.id))} <span class="muted">(${posTxt(x.pos)})</span>`).join("<br>")}
+      ${s.outs.length ? `${s.ins.length ? "<br>" : ""}${s.outs.map((x) => `<span class="rout">OUT</span> ${esc(pool.nameOf(x.id))}`).join(" · ")}` : ""}
+      ${s.moves.length ? `<br>${s.moves.map((x) => `<span class="muted">↔ ${esc(pool.nameOf(x.id))} ${posTxt(x.from)} → ${posTxt(x.to)}</span>`).join(" · ")}` : ""}</div></div>`).join("");
+    return `<div class="card"><div style="font-weight:700;margin-bottom:6px">${perLabel(r, q)}</div>
+      <div class="small"><span class="muted">Start:</span> ${sq.start.map((x) => `${x.pos} <b>${esc(x.id ? pool.nameOf(x.id) : "—")}</b>`).join(" · ")}</div>
+      ${lines || `<div class="small muted" style="margin-top:6px">No substitutions.</div>`}</div>`;
+  }).join("")}</div>`;
+  const ids = [...pool.all].filter((id) => st.P[id]?.total).sort((a, b) => st.P[b].total - st.P[a].total);
+  html += `<div class="section-title">Total minutes</div><div class="card chips">${ids.map((id) => `<span class="chip" style="border-left:5px solid ${pool.colorOf(id)}">${esc(pool.nameOf(id))} <b>${fmtClock(st.P[id].total)}</b></span>`).join("")}</div>`;
+  if (e.rotationUpdatedAt) html += `<div class="small muted" style="margin-top:8px">Saved ${esc(fmtDateTime(e.rotationUpdatedAt))}${e.rotationByName ? ` · ${esc(e.rotationByName)}` : ""}</div>`;
+  return html;
+}
+function rotationView(e) {
+  const R = S.rot, r = R.d, st = rotStats(r), pool = rotPool(e, r), t = teamById(e.teamId);
+  const tabs = [["editor", "✎ Editor"], ["analysis", "📊 Analysis"], ["preview", "👁 Preview"]];
+  let html = `<div class="rot-top no-print">
+      <button class="btn ghost sm" data-act="rot-close">‹ Game</button>
+      <div class="rot-title"><h2>${esc(eventTitle(e))}</h2><div class="small muted">${esc(t?.name || "")} · ${esc(fmtDay(e.date, { weekday: "short", day: "numeric", month: "short" }))} · Playing time ${R.dirty ? `<span class="badge warn">Not saved</span>` : ""}</div></div>
+      <div class="rot-tabs">${tabs.map(([k, l]) => `<button class="${R.tab === k ? "on" : ""}" data-act="rot-tab" data-tab="${k}">${l}</button>`).join("")}</div>
+      <div class="row">
+        ${R.tab === "editor" ? `<button class="btn sm" data-act="rot-undo" ${R.hist.length ? "" : "disabled"} title="Undo">↶</button><button class="btn sm" data-act="rot-settings" title="Game format">⚙︎</button>` : ""}
+        ${R.tab === "preview" ? `<button class="btn sm" data-act="rot-print">🖨 Print</button>` : ""}
+        <button class="btn primary sm" data-act="rot-save" ${R.dirty ? "" : "disabled"}>Save</button></div>
+    </div>`;
+  if (R.tab === "analysis") return html + rotWarnings(r, st, pool) + rotAnalysisHtml(r, st, pool);
+  if (R.tab === "preview") return html + `<h2 class="print-only">${esc(eventTitle(e))} · ${esc(e.date)}</h2>` + rotPreviewHtml(e, r, st, pool);
+  html += rotWarnings(r, st, pool);
+  html += `<p class="small muted no-print" style="margin:0 0 10px">Tap a box to choose the player or add a substitution. Drag the white line between two boxes to move the substitution time (${ROT_SNAP}-second steps). Times are the game clock.</p>`;
+  html += `<div class="rot-layout"><div class="rot-qs">${r.q.map((_, q) => rotQuarterHtml(r, q, st, pool, true)).join("")}</div>
+    <aside class="rot-side"><div class="section-title" style="margin-top:0">Players</div><div class="stack" style="gap:8px">${rotPlayersHtml(r, st, pool)}</div></aside></div>`;
+  return html;
+}
+
+/* ---------- editing ---------- */
+function rotPush() { const R = S.rot; R.hist.push(JSON.stringify(R.d)); if (R.hist.length > 80) R.hist.shift(); R.dirty = true; }
+function rotSegModal(q, pos, i) {
+  const R = S.rot, r = R.d, e = eventById(R.eventId);
+  const sg = rotSegs(r.q[q][pos], r.len)[i];
+  if (!sg || !e) return;
+  R.sel = { q, pos, i };
+  const st = rotStats(r), pool = rotPool(e, r);
+  // who is already on court somewhere else during this stretch
+  const busy = {};
+  ROT_POS.forEach((p) => { if (p === pos) return; rotSegs(r.q[q][p], r.len).forEach((x) => { if (x.id && x.s < sg.e && x.e > sg.s) busy[x.id] = p; }); });
+  const L = r.len, mid = Math.round((sg.s + sg.e) / 2 / 30) * 30;
+  const splitAt = mid > sg.s && mid < sg.e ? mid : Math.round((sg.s + sg.e) / 2);
+  const row = r.q[q][pos];
+  openModal({
+    title: `${perShort(r, q)} · ${pos} · ${fmtClock(L - sg.s)} → ${fmtClock(L - sg.e)}`,
+    body: `<div class="small muted">Who plays ${pos} in this stretch?</div>
+      <div class="rot-pick">${pool.all.map((id) => { const col = pool.colorOf(id); return `<button type="button" class="${sg.id === id ? "on" : ""}" data-act="rot-set" data-id="${id}" style="border-left-color:${col}">
+        <b>${esc(pool.nameOf(id))}</b><span class="small muted">${fmtClock(st.P[id]?.total || 0)}${busy[id] ? ` · <span class="bad-text">on court as ${busy[id]}</span>` : ""}</span></button>`; }).join("")}
+        <button type="button" class="${sg.id ? "" : "on"}" data-act="rot-set" data-id=""><b>Empty</b><span class="small muted">nobody</span></button></div>
+      <div class="section-title" style="margin-top:6px">Substitution</div>
+      <div class="row" style="align-items:flex-end"><label class="f" style="flex:1;min-width:130px">Sub at (game clock)<input id="rot-split-t" inputmode="decimal" value="${fmtClock(L - splitAt)}" placeholder="5:00"></label>
+        <button type="button" class="btn primary" data-act="rot-split">＋ Split here</button></div>
+      <div class="small muted">Splits this box in two${sg.id ? `: ${esc(pool.nameOf(sg.id))} keeps the first part` : ""}, then you pick who comes in.</div>
+      ${i > 0 || i < row.c.length ? `<div class="row">${i > 0 ? `<button type="button" class="btn sm" data-act="rot-merge" data-side="prev">Remove sub at ${fmtClock(L - sg.s)}</button>` : ""}${i < row.c.length ? `<button type="button" class="btn sm" data-act="rot-merge" data-side="next">Remove sub at ${fmtClock(L - sg.e)}</button>` : ""}</div>` : ""}`
+  });
+}
+function rotRescale(r, periods, len) {
+  const out = { periods, len, q: [] };
+  for (let k = 0; k < periods; k++) {
+    const Q = r.q[Math.min(k, r.q.length - 1)];
+    out.q.push(Object.fromEntries(ROT_POS.map((pos) => [pos, { c: Q[pos].c.map((t) => Math.round((t * len) / r.len / 5) * 5), p: [...Q[pos].p] }])));
+  }
+  return normRot(out);
+}
+Object.assign(ACTIONS, {
+  "rot-open": (el) => {
+    const e = eventById(el.dataset.id); if (!e) return;
+    S.eventId = e.id;
+    S.rot = { eventId: e.id, tab: "editor", d: e.rotation ? normRot(e.rotation) : newRotation(e), dirty: !e.rotation, hist: [], sel: null };
+    render(); window.scrollTo(0, 0);
+  },
+  "rot-close": () => {
+    if (S.rot?.dirty && !window.confirm("Leave without saving the playing time?")) return;
+    S.rot = null; render(); window.scrollTo(0, 0);
+  },
+  "rot-tab": (el) => { S.rot.tab = el.dataset.tab; render(); window.scrollTo(0, 0); },
+  "rot-seg": (el) => rotSegModal(Number(el.dataset.q), el.dataset.pos, Number(el.dataset.i)),
+  "rot-set": (el) => {
+    const { q, pos, i } = S.rot.sel; rotPush();
+    const row = S.rot.d.q[q][pos]; row.p[i] = el.dataset.id || "";
+    S.rot.d.q[q][pos] = mergeRow(row);
+    closeModal(); render();
+  },
+  "rot-split": () => {
+    const { q, pos, i } = S.rot.sel, r = S.rot.d, row = r.q[q][pos], sg = rotSegs(row, r.len)[i];
+    const clock = parseClock($("#rot-split-t")?.value);
+    if (!Number.isFinite(clock)) { toast("Write the game clock like 5:00", "error"); return; }
+    const t = r.len - clock;
+    if (t <= sg.s || t >= sg.e) { toast(`Pick a time between ${fmtClock(r.len - sg.s)} and ${fmtClock(r.len - sg.e)}.`, "error"); return; }
+    rotPush();
+    row.c.splice(i, 0, t); row.p.splice(i + 1, 0, "");
+    render(); rotSegModal(q, pos, i + 1);
+  },
+  "rot-merge": (el) => {
+    const { q, pos, i } = S.rot.sel, row = S.rot.d.q[q][pos]; rotPush();
+    if (el.dataset.side === "prev") { row.c.splice(i - 1, 1); row.p.splice(i, 1); } else { row.c.splice(i, 1); row.p.splice(i + 1, 1); }
+    S.rot.d.q[q][pos] = mergeRow(row);
+    closeModal(); render();
+  },
+  "rot-copy": (el) => { const q = Number(el.dataset.q); rotPush(); S.rot.d.q[q] = JSON.parse(JSON.stringify(S.rot.d.q[q - 1])); render(); },
+  "rot-clear": (el) => {
+    const q = Number(el.dataset.q); rotPush();
+    S.rot.d.q[q] = Object.fromEntries(ROT_POS.map((pos) => [pos, { c: [], p: [""] }])); render();
+  },
+  "rot-undo": () => { const R = S.rot; if (!R.hist.length) return; R.d = JSON.parse(R.hist.pop()); R.dirty = true; render(); },
+  "rot-print": () => window.print(),
+  "rot-settings": () => {
+    const r = S.rot.d, e = eventById(S.rot.eventId);
+    openModal({
+      title: "Game format",
+      body: `<label class="f">Periods<select name="periods"><option value="4" ${r.periods === 4 ? "selected" : ""}>4 quarters</option><option value="2" ${r.periods === 2 ? "selected" : ""}>2 halves</option></select></label>
+        <label class="f">Minutes per ${r.periods === 2 ? "half" : "quarter"}<input type="number" name="minutes" min="2" max="20" step="1" inputmode="numeric" value="${Math.round(r.len / 60)}"></label>
+        <p class="small muted" style="margin:0">Changing the length moves every substitution in proportion. More periods copy the last one.</p>`,
+      submitLabel: "Apply",
+      danger: e?.rotation ? `<button type="button" class="btn danger" data-act="rot-delete">Delete plan</button>` : "",
+      onSubmit: async (d) => {
+        const periods = Number(d.periods) === 2 ? 2 : 4, min = Math.round(Number(d.minutes));
+        if (!(min >= 2 && min <= 20)) throw new Error("Minutes must be between 2 and 20.");
+        if (periods === r.periods && min * 60 === r.len) return;
+        rotPush(); S.rot.d = rotRescale(r, periods, min * 60); render();
+      }
+    });
+  },
+  "rot-delete": () => confirmRun("Delete the playing-time plan for this game?", async () => {
+    const e = eventById(S.rot.eventId), batch = writeBatch(db);
+    batch.update(doc(db, "events", e.id), { rotation: null, rotationUpdatedAt: serverTimestamp(), rotationByName: S.me.name || "", updatedAt: serverTimestamp() });
+    log(batch, "Deleted playing time", { label: `${eventTitle(e)} · ${e.date}` });
+    await batch.commit();
+    closeModal(); S.rot = null; toast("Plan deleted"); render();
+  }),
+  "rot-save": async () => {
+    const R = S.rot, e = eventById(R.eventId); if (!e) return;
+    const r = normRot(R.d), st = rotStats(r);
+    if (st.conflicts.length && !window.confirm("Some players are in two positions at the same time. Save anyway?")) return;
+    const batch = writeBatch(db);
+    batch.update(doc(db, "events", e.id), { rotation: r, rotationUpdatedAt: serverTimestamp(), rotationByName: S.me.name || "", updatedAt: serverTimestamp() });
+    log(batch, "Saved playing time", { label: `${eventTitle(e)} · ${e.date} · ${plural(Object.keys(st.P).length, "player")}` });
+    await batch.commit();
+    R.d = r; R.dirty = false; toast("Playing time saved"); render();
+  }
+});
+// drag the line between two boxes to move a substitution
+document.addEventListener("pointerdown", (ev) => {
+  const h = ev.target.closest && ev.target.closest(".rh");
+  if (!h || !S.rot) return;
+  const q = Number(h.dataset.q), pos = h.dataset.pos, i = Number(h.dataset.i), r = S.rot.d, row = r.q[q][pos];
+  const lo = (i > 0 ? row.c[i - 1] : 0) + ROT_SNAP, hi = (i < row.c.length - 1 ? row.c[i + 1] : r.len) - ROT_SNAP;
+  rotDrag = { q, pos, i, lo, hi, h, rect: h.parentElement.getBoundingClientRect(), t: row.c[i], t0: row.c[i], last: Date.now(),
+    a: document.getElementById(`rs-${q}-${pos}-${i}`), b: document.getElementById(`rs-${q}-${pos}-${i + 1}`) };
+  h.classList.add("on");
+  try { h.setPointerCapture(ev.pointerId); } catch (_) {}
+  ev.preventDefault();
+});
+document.addEventListener("pointermove", (ev) => {
+  const D = rotDrag; if (!D) return;
+  const L = S.rot.d.len;
+  let t = ((ev.clientX - D.rect.left) / D.rect.width) * L;
+  t = Math.round(t / ROT_SNAP) * ROT_SNAP;
+  t = Math.max(D.lo, Math.min(D.hi, t));
+  D.last = Date.now();
+  if (t === D.t) return;
+  D.t = t;
+  const row = S.rot.d.q[D.q][D.pos], start = D.i > 0 ? row.c[D.i - 1] : 0, end = D.i < row.c.length - 1 ? row.c[D.i + 1] : L;
+  D.h.style.left = `${(t / L) * 100}%`;
+  D.h.querySelector(".tip").textContent = fmtClock(L - t);
+  if (D.a) D.a.style.width = `${((t - start) / L) * 100}%`;
+  if (D.b) { D.b.style.left = `${(t / L) * 100}%`; D.b.style.width = `${((end - t) / L) * 100}%`; }
+});
+function rotDragEnd() {
+  const D = rotDrag; if (!D) return;
+  rotDrag = null;
+  if (D.t !== D.t0 && S.rot) { rotPush(); S.rot.d.q[D.q][D.pos].c[D.i] = D.t; }
+  render();
+}
+document.addEventListener("pointerup", rotDragEnd);
+document.addEventListener("pointercancel", rotDragEnd);
 
 /* ---------- announcements ---------- */
 function seenKey() { return `bbapp_seen_news_${S.user?.uid || ""}`; }
@@ -3949,6 +4400,46 @@ const LIB = [
       { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: 2, acts: { o0: "screen" }, curves: { o1: 0.3 }, note: "1 down-screens for 2, who pops to the corner; 4 cuts to the rim." },
       { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: 1, note: "Inbound to 2 — or to 4 if the defense switches." },
       { o: [[52, 36], [12, 16], [96, 4], [80, 16], [98, 54]], ball: -1, shot: true, note: "Corner shot." }
+    ] },
+  { name: "Curl", category: "Half-court offense",
+    description: "Down screen for a shooter. When the defender trails over the top of the screen, the shooter curls tight around the screener into the lane instead of popping out.",
+    steps: [
+      { o: [[75, 90], [96, 22], [22, 62], [52, 24], [100, 60]], ball: 0, note: "2 on the right block, 5 at the right elbow, 4 on the left block." },
+      { o: [[75, 90], [96, 22], [22, 62], [52, 24], [108, 34]], ball: 0, acts: { o4: "screen" }, note: "5 comes down and screens 2's defender." },
+      { o: [[75, 90], [86, 42], [22, 62], [52, 24], [108, 34]], ball: 0, curves: { o1: -1 }, note: "The defender trails, so 2 curls tight around 5's hip into the lane." },
+      { o: [[75, 90], [80, 30], [22, 62], [52, 24], [122, 52]], ball: 1, note: "1 hits 2 on the curl; 5 pops out as the safety outlet." },
+      { o: [[75, 90], [78, 26], [22, 62], [52, 24], [122, 52]], ball: -1, shot: true, note: "2 finishes in the lane." }
+    ] },
+  { name: "Wave", category: "Half-court offense",
+    description: "Continuous dribble handoffs along the perimeter. Each handoff shifts the defense one more time until a player can turn the corner and attack the rim.",
+    steps: [
+      { o: [[75, 90], [128, 62], [22, 62], [142, 12], [60, 26]], ball: 0, note: "Four out, 5 low. 1 has the ball at the top." },
+      { o: [[104, 78], [120, 70], [22, 62], [142, 12], [60, 26]], ball: 0, acts: { o0: "dribble" }, note: "1 dribbles at 2; 2 steps up to meet him." },
+      { o: [[128, 62], [96, 84], [22, 62], [142, 12], [60, 26]], ball: 1, bx: "handoff", note: "Handoff: 2 takes it and keeps going to the middle; 1 fills the right wing." },
+      { o: [[128, 62], [62, 80], [36, 72], [142, 12], [60, 26]], ball: 1, acts: { o1: "dribble" }, note: "2 dribbles at 3 for the second handoff." },
+      { o: [[128, 62], [22, 62], [54, 80], [142, 12], [104, 24]], ball: 2, bx: "handoff", curves: { o1: 0.8 }, note: "3 takes the handoff; 2 fills the left wing; 5 clears to the other block." },
+      { o: [[128, 62], [22, 62], [70, 30], [142, 12], [104, 24]], ball: 2, acts: { o2: "dribble" }, curves: { o2: 0.2 }, note: "3 turns the corner and attacks the rim." },
+      { o: [[128, 62], [22, 62], [72, 26], [142, 12], [104, 24]], ball: -1, shot: true, note: "Layup — or kick out if the help comes." }
+    ] },
+  { name: "Zoom", category: "Half-court offense",
+    description: "Pin-down screen straight into a dribble handoff (also called Chicago action). The shooter gets the ball on the move with the defender a step behind.",
+    steps: [
+      { o: [[75, 90], [98, 22], [22, 62], [8, 12], [100, 60]], ball: 0, note: "2 on the right block, 5 at the right elbow." },
+      { o: [[75, 90], [98, 22], [22, 62], [8, 12], [106, 78]], ball: 4, note: "5 steps out to the right slot and receives from 1." },
+      { o: [[114, 38], [98, 22], [22, 62], [8, 12], [106, 78]], ball: 4, acts: { o0: "screen" }, note: "1 cuts down and sets a pin-down for 2." },
+      { o: [[114, 38], [122, 66], [22, 62], [8, 12], [110, 76]], ball: 4, acts: { o4: "dribble" }, curves: { o1: 0.5 }, note: "2 sprints up off the pin-down; 5 dribbles towards him." },
+      { o: [[114, 38], [104, 70], [22, 62], [8, 12], [118, 80]], ball: 1, bx: "handoff", note: "Handoff: 2 takes it at full speed." },
+      { o: [[118, 20], [90, 58], [22, 62], [8, 12], [100, 36]], ball: 1, acts: { o1: "dribble" }, curves: { o4: -0.3 }, note: "2 attacks: pull-up three, or drive. 5 rolls to the rim, 1 clears to the corner." },
+      { o: [[118, 20], [90, 58], [22, 62], [8, 12], [100, 36]], ball: -1, shot: true, note: "2 shoots." }
+    ] },
+  { name: "Elbow curl", category: "Half-court offense",
+    description: "Ball to the big at the elbow; the wing curls tight around him, takes the handoff and attacks the rim.",
+    steps: [
+      { o: [[75, 90], [128, 62], [22, 62], [8, 12], [98, 24]], ball: 0, note: "Four out, 5 on the right block." },
+      { o: [[75, 90], [128, 62], [22, 62], [8, 12], [92, 60]], ball: 4, note: "5 flashes to the right elbow and receives from 1." },
+      { o: [[46, 82], [86, 44], [22, 62], [8, 12], [92, 60]], ball: 1, bx: "handoff", curves: { o1: 0.3 }, note: "2 cuts right past 5's hip and curls into the lane — handoff on the curl. 1 moves away to the left slot." },
+      { o: [[46, 82], [78, 26], [22, 62], [8, 12], [102, 70]], ball: 1, acts: { o1: "dribble" }, note: "2 attacks the rim; 5 steps out, ready for a pass back." },
+      { o: [[46, 82], [76, 22], [22, 62], [8, 12], [102, 70]], ball: -1, shot: true, note: "Layup." }
     ] },
   { name: "2-3 zone defense", category: "Zone defense",
     description: "How the 2-3 zone slides as the ball moves. Switch to Defense to see only the defenders.",
